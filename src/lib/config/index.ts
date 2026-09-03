@@ -29,10 +29,10 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });
 
+let _env: z.infer<typeof envSchema> | null = null;
+
 function loadEnv() {
-  if (process.env.__envValidated) {
-    return process.env as unknown as z.infer<typeof envSchema>;
-  }
+  if (_env) return _env;
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
@@ -40,11 +40,17 @@ function loadEnv() {
     throw new Error("Invalid environment variables");
   }
 
-  process.env.__envValidated = "true";
-  return parsed.data;
+  _env = parsed.data;
+  return _env;
 }
 
-export const env = loadEnv();
+/** Lazy env — validates only at first access, not at module load / build time */
+export const env = new Proxy({} as z.infer<typeof envSchema>, {
+  get(_target, prop) {
+    const loaded = loadEnv();
+    return loaded[prop as keyof typeof loaded];
+  },
+});
 
 // ── Chain Config ────────────────────────────────────────────────────────────
 
