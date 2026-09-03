@@ -1,73 +1,69 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
-import { sourceSyncState } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { dataAvailable } from "@/lib/api-helpers";
+import { getSyncStatesData } from "@/lib/queries";
+import { loadSnapshot } from "@/lib/snapshot";
+
+async function checkUrl(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+    return response.ok ? "healthy" : "degraded";
+  } catch {
+    return "unavailable";
+  }
+}
 
 export async function GET() {
   try {
-    if (!dataAvailable()) return uiOnlyResponse("source-health");
+    // Sync states come from the local DB when present, otherwise the snapshot
+    const syncStates = dataAvailable()
+      ? await getSyncStatesData(getDb())
+      : (await loadSnapshot())?.syncStates ?? [];
 
-    // Get all sync states
-    const db = getDb();
-    const syncStates = await db
-      .select()
-      .from(sourceSyncState)
-      .orderBy(desc(sourceSyncState.lastSuccessAt));
+    const findState = (source: string, jobName?: string) =>
+      syncStates.find((s) => s.source === source && (!jobName || s.jobName === jobName));
 
-    // Check Robinhood Assets API health
-    let robinhoodAssetsStatus = "unknown";
-    try {
-      const response = await fetch("https://api.robinhood.com/rhj/assets", {
-        method: "HEAD",
-        signal: AbortSignal.timeout(5000),
-      });
-      robinhoodAssetsStatus = response.ok ? "healthy" : "degraded";
-    } catch {
-      robinhoodAssetsStatus = "unavailable";
-    }
+    const robinhoodAssetsStatus = await checkUrl("https://api.robinhood.com/rhj/assets");
+    const blockscoutStatus = await checkUrl("https://api.blockscout.com/4663/api/v2/stats");
 
-    // Check Blockscout API health
-    let blockscoutStatus = "unknown";
-    try {
-      const response = await fetch("https://api.blockscout.com/4663/api/v2/stats", {
-        method: "HEAD",
-        signal: AbortSignal.timeout(5000),
-      });
-      blockscoutStatus = response.ok ? "healthy" : "degraded";
-    } catch {
-      blockscoutStatus = "unavailable";
-    }
+    const robinhoodState = findState("robinhood", "assets");
+    const blockscoutState = findState("blockscout");
+
+    const sources = [
+      {
+        name: "Robinhood Assets API",
+        url: "https://api.robinhood.com/rhj/assets",
+        status: robinhoodAssetsStatus,
+        lastSuccessAt: robinhoodState?.lastSuccessAt || null,
+        lastError: robinhoodState?.lastError || null,
+      },
+      {
+        name: "Blockscout API",
+        url: "https://api.blockscout.com/4663/api/v2",
+        status: blockscoutStatus,
+        lastSuccessAt: blockscoutState?.lastSuccessAt || null,
+        lastError: blockscoutState?.lastError || null,
+      },
+      {
+        name: "Database",
+        url: dataAvailable() ? "SQLite (local)" : "Snapshot (Vercel Blob)",
+        status: dataAvailable() || syncStates.length > 0 ? "healthy" : "unavailable",
+        lastSuccessAt: syncStates[0]?.lastSuccessAt || null,
+        lastError: null,
+      },
+    ];
 
     return NextResponse.json({
       data: {
-        sources: [
-          {
-            name: "Robinhood Assets API",
-            url: "https://api.robinhood.com/rhj/assets",
-            status: robinhoodAssetsStatus,
-            lastSuccessAt: syncStates.find((s) => s.source === "robinhood" && s.jobName === "assets")?.lastSuccessAt?.toISOString() || null,
-            lastError: syncStates.find((s) => s.source === "robinhood" && s.jobName === "assets")?.lastError || null,
-          },
-          {
-            name: "Blockscout API",
-            url: "https://api.blockscout.com/4663/api/v2",
-            status: blockscoutStatus,
-            lastSuccessAt: syncStates.find((s) => s.source === "blockscout")?.lastSuccessAt?.toISOString() || null,
-            lastError: syncStates.find((s) => s.source === "blockscout")?.lastError || null,
-          },
-          {
-            name: "Database",
-            url: "Neon Postgres",
-            status: "healthy",
-            lastSuccessAt: new Date().toISOString(),
-            lastError: null,
-          },
-        ],
-        overallStatus: robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" ? "healthy" : "degraded",
+        sources,
+        overallStatus:
+          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy"
+            ? "healthy"
+            : "degraded",
       },
       meta: {
         checkedAt: new Date().toISOString(),
+        servedFrom: dataAvailable() ? "local-db" : "snapshot",
       },
     });
   } catch (error) {

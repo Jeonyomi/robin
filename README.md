@@ -93,8 +93,23 @@ ROBINHOOD_ASSETS_API_URL="https://api.robinhood.com/rhj/assets"
 BLOCKSCOUT_API_BASE_URL="https://robinhoodchain.blockscout.com/api/v2"
 ```
 
-> Vercel deployment is UI-only — no DB or secrets required. All data is
-> stored and synced locally (`pnpm sync` + `pnpm dev`).
+> Vercel deployment shows your synced data via a JSON snapshot published to
+> Vercel Blob. Data is still stored and synced locally — see below.
+
+### Publish data to the deployed UI (optional)
+
+```bash
+# One-time: Vercel dashboard → Storage → Create Blob store → copy token to .env
+#   BLOB_READ_WRITE_TOKEN="..."
+
+# Uploads data/snapshot.json and prints a public URL
+pnpm publish:snapshot
+
+# 1) Set that URL as SNAPSHOT_URL in your Vercel project and redeploy.
+# 2) `pnpm sync` now auto-publishes a fresh snapshot on every run.
+```
+
+Without `SNAPSHOT_URL` the deployment renders empty states; nothing breaks.
 
 ### Generate Secrets
 

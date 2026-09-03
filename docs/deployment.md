@@ -79,28 +79,47 @@ pnpm dev
 
 ### 2. Environment variables
 
-No secrets are required for UI-only deployment. The only variables used
-at runtime on Vercel are the public ones (defaults work):
+Only one runtime variable is needed to show data: `SNAPSHOT_URL`
+(the public Vercel Blob URL your local machine publishes to). Without it the
+deployment still works — pages render with empty states instead of data.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `NEXT_PUBLIC_CHAIN_ID` | `4663` | |
 | `NEXT_PUBLIC_EXPLORER_URL` | Blockscout | |
+| `SNAPSHOT_URL` | — | Public Blob URL from `pnpm publish:snapshot` |
 
-`DATABASE_URL`, `CRON_SECRET`, `ADMIN_SYNC_SECRET` are NOT needed —
-API routes detect the missing local DB and return `uiOnly` empty responses.
+`DATABASE_URL`, `CRON_SECRET`, `ADMIN_SYNC_SECRET` are NOT needed.
 
-### 3. What works on Vercel
+### 3. Publish local data (one-time setup)
 
-- All 9 pages render (empty states with setup guidance)
+Data accumulates on your machine; the deployment reads a **JSON snapshot**
+published to Vercel Blob after each sync. To enable:
+
+1. Vercel dashboard → **Storage** → **Create Blob store** → copy the
+   `BLOB_READ_WRITE_TOKEN`.
+2. Add it to your local `.env` (`BLOB_READ_WRITE_TOKEN=...`).
+3. Run `pnpm sync` (or `pnpm publish:snapshot`) — it uploads
+   `data/snapshot.json` and prints a **public URL**.
+4. Set that URL as `SNAPSHOT_URL` in Vercel
+   (Settings → Environment Variables → Production) and redeploy.
+
+From then on, every `pnpm sync` run auto-publishes a fresh snapshot
+(hourly via the `RobinSync` scheduled task, if configured).
+
+### 4. What works on Vercel
+
+- All 10 pages render; pages with `SNAPSHOT_URL` set show real synced data
 - Navigation, layout, watchlist (localStorage), styling
-- API routes return `{ data: [], meta: { uiOnly: true, message: "..." } }`
+- API routes fall back: local DB → Blob snapshot → `uiOnly` empty response
+  (`meta.servedFrom` says which source answered)
+- Live endpoints: `/api/v1/overview`, `/stock-tokens`, `/tokens`,
+  `/tokens/[address]`, `/source-health`
 
-### 4. What requires the local machine
+### 5. What requires the local machine
 
-- Real on-chain data (tokens, prices, holders, signals)
-- Data sync jobs (`pnpm sync`)
-- On-demand refresh (local API)
+- Data sync jobs (`pnpm sync`) and Blob publishing
+- On-demand refresh / admin sync endpoints (local only)
 
 ---
 
@@ -130,7 +149,8 @@ Migration files live in `src/db/migrations/` and are committed.
 ## Troubleshooting
 
 ### "UI-only deployment" message on pages
-Expected on Vercel — data lives on your local machine. Run `pnpm dev` locally.
+Vercel without `SNAPSHOT_URL` set, or before the first `pnpm sync` publish.
+Set `SNAPSHOT_URL` and redeploy, or run `pnpm dev` locally.
 
 ### API returns empty even locally
 - Check `data/robin.db` exists: `pnpm db:push`

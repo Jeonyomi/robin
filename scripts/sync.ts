@@ -15,6 +15,7 @@ import { syncCanonicalAssets } from "@/lib/jobs/sync-canonical-assets";
 import { syncTokenMetadata } from "@/lib/jobs/sync-token-metadata";
 import { syncReferencePrices } from "@/lib/jobs/sync-reference-prices";
 import { calculateTokenMetrics } from "@/lib/jobs/calculate-metrics";
+import { publishSnapshotToBlob, formatBytes } from "./lib/snapshot-builder";
 
 const job = process.argv[2] || "all";
 
@@ -51,6 +52,24 @@ async function main() {
   if (job === "all" || job === "watch") {
     const jobs = ["canonical", "metadata", "prices", "metrics"];
     for (const j of jobs) await run(j);
+
+    // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
+    // Only in "all" mode (hourly) — watch mode re-runs every 5 min and would
+    // burn Blob upload bandwidth. Skipped when BLOB_READ_WRITE_TOKEN is unset.
+    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN) {
+      console.log("\n▶ publishing snapshot to Vercel Blob");
+      try {
+        const { url, sizeBytes } = await publishSnapshotToBlob();
+        console.log(`✓ snapshot published (${formatBytes(sizeBytes)})`);
+        console.log(`  ${url}`);
+      } catch (error) {
+        console.error(
+          "✗ snapshot publish failed:",
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+
     if (job === "watch") {
       console.log("\n⏱ Watching — re-running every 5 minutes. Ctrl+C to stop.");
       setInterval(async () => {

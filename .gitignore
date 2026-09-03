@@ -47,3 +47,6 @@ next-env.d.ts
 # Local data (SQLite) — never commit
 /data/
 .env
+
+# Machine-specific scheduled-sync wrapper
+/scripts/sync-hourly.cmd

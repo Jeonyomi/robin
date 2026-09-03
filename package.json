@@ -18,12 +18,15 @@
     "sync:prices": "tsx scripts/sync.ts prices",
     "sync:metrics": "tsx scripts/sync.ts metrics",
     "sync:watch": "tsx scripts/sync.ts watch",
+    "build:snapshot": "tsx scripts/build-snapshot.ts",
+    "publish:snapshot": "tsx scripts/publish-snapshot.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@tanstack/react-query": "^5.102.8",
+    "@vercel/blob": "^2.8.0",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
