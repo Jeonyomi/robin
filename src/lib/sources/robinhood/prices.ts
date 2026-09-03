@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { APIs } from "@/lib/config";
+import { getAPIs } from "@/lib/config";
 
 // ── Raw Price Schema ────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ export async function fetchReferencePrice(
   symbol: string,
   currentMultiplier: string | null,
 ): Promise<NormalizedPrice | null> {
-  const url = `${APIs.robinhood.baseUrl}/rhj/prices/${symbol}`;
+  const url = `${getAPIs().robinhood.baseUrl}/rhj/prices/${symbol}`;
 
   try {
     const response = await fetch(url, {

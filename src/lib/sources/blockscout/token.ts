@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { APIs } from "@/lib/config";
+import { getAPIs } from "@/lib/config";
 
 // ── Raw Blockscout Schemas ──────────────────────────────────────────────────
 
@@ -44,13 +44,13 @@ export type BlockscoutToken = {
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export async function fetchTokenMetadata(address: string): Promise<BlockscoutToken | null> {
-  const url = `${APIs.blockscout.baseUrl}/tokens/${address.toLowerCase()}`;
+  const url = `${getAPIs().blockscout.baseUrl}/tokens/${address.toLowerCase()}`;
 
   try {
     const response = await fetch(url, {
       headers: {
         "Accept": "application/json",
-        ...(APIs.blockscout.apiKey ? { "Authorization": `Bearer ${APIs.blockscout.apiKey}` } : {}),
+        ...(getAPIs().blockscout.apiKey ? { "Authorization": `Bearer ${getAPIs().blockscout.apiKey}` } : {}),
       },
     });
 
@@ -74,11 +74,11 @@ export async function fetchTokenMetadata(address: string): Promise<BlockscoutTok
     let transfersCount: number | null = null;
 
     try {
-      const countersUrl = `${APIs.blockscout.baseUrl}/tokens/${address.toLowerCase()}/counters`;
+      const countersUrl = `${getAPIs().blockscout.baseUrl}/tokens/${address.toLowerCase()}/counters`;
       const countersResponse = await fetch(countersUrl, {
         headers: {
           "Accept": "application/json",
-          ...(APIs.blockscout.apiKey ? { "Authorization": `Bearer ${APIs.blockscout.apiKey}` } : {}),
+          ...(getAPIs().blockscout.apiKey ? { "Authorization": `Bearer ${getAPIs().blockscout.apiKey}` } : {}),
         },
       });
 
@@ -135,7 +135,7 @@ export async function fetchTokenTransfers(
   }>;
   nextCursor: string | null;
 }> {
-  const url = new URL(`${APIs.blockscout.baseUrl}/tokens/${address.toLowerCase()}/transfers`);
+  const url = new URL(`${getAPIs().blockscout.baseUrl}/tokens/${address.toLowerCase()}/transfers`);
   url.searchParams.set("limit", limit.toString());
   if (cursor) url.searchParams.set("cursor", cursor);
 
@@ -143,7 +143,7 @@ export async function fetchTokenTransfers(
     const response = await fetch(url.toString(), {
       headers: {
         "Accept": "application/json",
-        ...(APIs.blockscout.apiKey ? { "Authorization": `Bearer ${APIs.blockscout.apiKey}` } : {}),
+        ...(getAPIs().blockscout.apiKey ? { "Authorization": `Bearer ${getAPIs().blockscout.apiKey}` } : {}),
       },
     });
 

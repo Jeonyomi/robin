@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { APIs, CHAIN } from "@/lib/config";
+import { getAPIs, getChain } from "@/lib/config";
 
 // ── Raw API Schema ──────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ export type CanonicalAsset = {
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
-  const response = await fetch(APIs.robinhood.assetsUrl, {
+  const response = await fetch(getAPIs().robinhood.assetsUrl, {
     headers: { "Accept": "application/json" },
     next: { revalidate: 3600 }, // cache 1 hour
   });
@@ -60,7 +60,7 @@ export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
     const item = parsed.data;
 
     // Only include assets on Robinhood Chain
-    if (item.chainId !== CHAIN.id) continue;
+    if (item.chainId !== getChain().id) continue;
 
     normalized.push({
       id: `rhj-${item.id}`,

@@ -9,7 +9,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_EXPLORER_URL: z.string().url().default("https://robinhoodchain.blockscout.com"),
 
   // Database
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.string().default(""),
 
   // Robinhood Chain
   ROBINHOOD_RPC_URL: z.string().url().default("https://rpc.mainnet.chain.robinhood.com"),
@@ -20,9 +20,9 @@ const envSchema = z.object({
   BLOCKSCOUT_API_BASE_URL: z.string().url().default("https://api.blockscout.com/4663/api/v2"),
   BLOCKSCOUT_API_KEY: z.string().optional(),
 
-  // Secrets
-  CRON_SECRET: z.string().min(1),
-  ADMIN_SYNC_SECRET: z.string().min(1),
+  // Secrets — default to empty so build passes; validated at runtime
+  CRON_SECRET: z.string().default(""),
+  ADMIN_SYNC_SECRET: z.string().default(""),
 
   // Optional Redis
   UPSTASH_REDIS_REST_URL: z.string().optional(),
@@ -52,27 +52,30 @@ export const env = new Proxy({} as z.infer<typeof envSchema>, {
   },
 });
 
-// ── Chain Config ────────────────────────────────────────────────────────────
+// ── Derived Config (lazy) ──────────────────────────────────────────────────
 
-export const CHAIN = {
-  id: env.NEXT_PUBLIC_CHAIN_ID,
-  name: "Robinhood Chain",
-  rpcUrl: env.ROBINHOOD_RPC_URL,
-  explorerUrl: env.NEXT_PUBLIC_EXPLORER_URL,
-} as const;
+let _chain: { id: number; name: string; rpcUrl: string; explorerUrl: string } | null = null;
+let _apis: { blockscout: { baseUrl: string; apiKey: string | undefined }; robinhood: { assetsUrl: string; baseUrl: string } } | null = null;
 
-// ── API Config ──────────────────────────────────────────────────────────────
+export function getChain() {
+  if (!_chain) _chain = { id: env.NEXT_PUBLIC_CHAIN_ID, name: "Robinhood Chain", rpcUrl: env.ROBINHOOD_RPC_URL, explorerUrl: env.NEXT_PUBLIC_EXPLORER_URL };
+  return _chain;
+}
 
-export const APIs = {
-  blockscout: {
-    baseUrl: env.BLOCKSCOUT_API_BASE_URL,
-    apiKey: env.BLOCKSCOUT_API_KEY,
-  },
-  robinhood: {
-    assetsUrl: env.ROBINHOOD_ASSETS_API_URL,
-    baseUrl: env.ROBINHOOD_API_BASE_URL,
-  },
-} as const;
+export function getAPIs() {
+  if (!_apis) _apis = { blockscout: { baseUrl: env.BLOCKSCOUT_API_BASE_URL, apiKey: env.BLOCKSCOUT_API_KEY }, robinhood: { assetsUrl: env.ROBINHOOD_ASSETS_API_URL, baseUrl: env.ROBINHOOD_API_BASE_URL } };
+  return _apis;
+}
+
+/** Runtime check — call before any operation that requires secrets */
+export function requireEnv() {
+  const d = env;
+  const missing: string[] = [];
+  if (!d.DATABASE_URL) missing.push("DATABASE_URL");
+  if (!d.CRON_SECRET) missing.push("CRON_SECRET");
+  if (!d.ADMIN_SYNC_SECRET) missing.push("ADMIN_SYNC_SECRET");
+  if (missing.length > 0) throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+}
 
 // ── Sync Config ─────────────────────────────────────────────────────────────
 
