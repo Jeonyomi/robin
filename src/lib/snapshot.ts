@@ -29,6 +29,12 @@ const TTL_MS = 5 * 60 * 1000;
 
 let cached: Snapshot | null = null;
 let cachedAt = 0;
+let lastError: string | null = null;
+
+/** Why the snapshot is unavailable — surfaced in API meta for debugging. */
+export function getSnapshotStatus(): { urlConfigured: boolean; lastError: string | null } {
+  return { urlConfigured: !!process.env.SNAPSHOT_URL, lastError };
+}
 
 function localSnapshotPath(): string {
   return path.join(process.cwd(), "data", "snapshot.json");
@@ -51,16 +57,22 @@ export async function loadSnapshot(): Promise<Snapshot | null> {
       if (res.ok) {
         cached = (await res.json()) as Snapshot;
         cachedAt = Date.now();
+        lastError = null;
         return cached;
       }
+      lastError = `fetch failed: ${res.status} ${res.statusText}`;
       console.error(`Snapshot fetch failed: ${res.status} ${res.statusText}`);
+    } else {
+      lastError = "SNAPSHOT_URL not set";
     }
 
     if (snapshotExistsLocally()) {
       cached = JSON.parse(fs.readFileSync(localSnapshotPath(), "utf8")) as Snapshot;
       cachedAt = Date.now();
+      lastError = null;
     }
   } catch (error) {
+    lastError = error instanceof Error ? error.message : String(error);
     console.error("Failed to load snapshot:", error);
   }
 

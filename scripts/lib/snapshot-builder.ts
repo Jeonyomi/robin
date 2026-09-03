@@ -77,6 +77,7 @@ export async function publishSnapshotToBlob(): Promise<{ url: string; sizeBytes:
   const blob = await put("robin/snapshot.json", JSON.stringify(snapshot), {
     access: "public",
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: "application/json",
   });
 

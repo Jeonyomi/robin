@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasLocalDb } from "@/lib/db";
+import { getSnapshotStatus } from "@/lib/snapshot";
 
 /**
  * UI-only mode: on Vercel (or any env without a local SQLite file), the API
@@ -14,6 +15,7 @@ export function uiOnlyResponse(endpoint: string) {
       message:
         "UI-only deployment — on-chain data is stored and synced on the local machine. Run `pnpm dev` + `pnpm sync` there.",
       endpoint,
+      snapshot: getSnapshotStatus(),
     },
   });
 }
