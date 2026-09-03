@@ -79,15 +79,16 @@ pnpm dev
 
 ### 2. Environment variables
 
-Only one runtime variable is needed to show data: `SNAPSHOT_URL`
-(the public Vercel Blob URL your local machine publishes to). Without it the
-deployment still works — pages render with empty states instead of data.
+No runtime variables are strictly required. The public Vercel Blob URL that
+`pnpm publish:snapshot` uploads to is baked into the code (`DEFAULT_SNAPSHOT_URL`
+in `src/lib/snapshot.ts`), so the deployment serves your synced data out of
+the box. Override it only if the Blob store ever changes.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `NEXT_PUBLIC_CHAIN_ID` | `4663` | |
 | `NEXT_PUBLIC_EXPLORER_URL` | Blockscout | |
-| `SNAPSHOT_URL` | — | Public Blob URL from `pnpm publish:snapshot` |
+| `SNAPSHOT_URL` | baked-in Blob URL | Optional override; not needed in practice |
 
 `DATABASE_URL`, `CRON_SECRET`, `ADMIN_SYNC_SECRET` are NOT needed.
 
@@ -101,15 +102,15 @@ published to Vercel Blob after each sync. To enable:
 2. Add it to your local `.env` (`BLOB_READ_WRITE_TOKEN=...`).
 3. Run `pnpm sync` (or `pnpm publish:snapshot`) — it uploads
    `data/snapshot.json` and prints a **public URL**.
-4. Set that URL as `SNAPSHOT_URL` in Vercel
-   (Settings → Environment Variables → Production) and redeploy.
+4. Done — no Vercel env var needed. The published URL is baked into the
+   deployed code as the default snapshot source.
 
 From then on, every `pnpm sync` run auto-publishes a fresh snapshot
 (hourly via the `RobinSync` scheduled task, if configured).
 
 ### 4. What works on Vercel
 
-- All 10 pages render; pages with `SNAPSHOT_URL` set show real synced data
+- All 10 pages render with real synced data (served from the Blob snapshot)
 - Navigation, layout, watchlist (localStorage), styling
 - API routes fall back: local DB → Blob snapshot → `uiOnly` empty response
   (`meta.servedFrom` says which source answered)
@@ -149,8 +150,8 @@ Migration files live in `src/db/migrations/` and are committed.
 ## Troubleshooting
 
 ### "UI-only deployment" message on pages
-Vercel without `SNAPSHOT_URL` set, or before the first `pnpm sync` publish.
-Set `SNAPSHOT_URL` and redeploy, or run `pnpm dev` locally.
+Vercel before the first `pnpm sync` publish. Run `pnpm sync` locally (it
+auto-publishes), or run `pnpm dev` locally.
 
 ### API returns empty even locally
 - Check `data/robin.db` exists: `pnpm db:push`

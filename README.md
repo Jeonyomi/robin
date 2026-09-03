@@ -105,11 +105,13 @@ BLOCKSCOUT_API_BASE_URL="https://robinhoodchain.blockscout.com/api/v2"
 # Uploads data/snapshot.json and prints a public URL
 pnpm publish:snapshot
 
-# 1) Set that URL as SNAPSHOT_URL in your Vercel project and redeploy.
+# 1) Optional: set that URL as SNAPSHOT_URL to override the default below.
 # 2) `pnpm sync` now auto-publishes a fresh snapshot on every run.
 ```
 
-Without `SNAPSHOT_URL` the deployment renders empty states; nothing breaks.
+The public Blob URL is baked into the deployed code as a fallback, so the
+site serves your data right after deploy — no Vercel env var needed. Set
+`SNAPSHOT_URL` only if you migrate to a different Blob store.
 
 ### Generate Secrets
 
