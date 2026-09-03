@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { tokens, tokenTransfers, signals, sourceSyncState } from "@/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 
@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const windowStart = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
 
     // Get token count
+    const db = getDb();
     const tokenCount = await db.select({ count: sql<number>`count(*)` }).from(tokens);
 
     // Get transfer count in window

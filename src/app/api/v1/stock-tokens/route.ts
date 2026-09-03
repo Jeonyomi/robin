@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { tokens, canonicalAssets, tokenMetricSnapshots } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     const canonicalOnly = searchParams.get("canonicalOnly") === "true";
 
     // Fetch canonical assets
+    const db = getDb();
     const canonical = await db.select().from(canonicalAssets);
 
     // Fetch tokens with canonical status
