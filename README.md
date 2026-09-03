@@ -37,9 +37,9 @@ Frontend (Next.js 16) → API Routes → Domain Logic → Neon Postgres
 - **Frontend**: Next.js App Router, React 19, Tailwind CSS, ECharts
 - **API**: Next.js Route Handlers (BFF pattern)
 - **Domain**: Canonical identity resolver, risk engine, opportunity scorer, signal generator
-- **Storage**: Neon Postgres with Drizzle ORM (10 tables)
+- **Storage**: Local SQLite (`data/robin.db`) with Drizzle ORM (10 tables)
 - **Sources**: Robinhood Assets API, Robinhood Price API, Blockscout REST API
-- **Deploy**: Vercel Hobby + Neon Free tier
+- **Deploy**: Local-first — full data + dashboard on your machine; Vercel serves UI only
 
 ## 📊 Core Features
 
@@ -56,7 +56,7 @@ Frontend (Next.js 16) → API Routes → Domain Logic → Neon Postgres
 
 ## 🚀 Quick Start
 
-### Local Development
+### Local Development (data + full dashboard)
 
 ```bash
 # Clone
@@ -66,29 +66,35 @@ cd robin
 # Install
 pnpm install
 
-# Setup environment
-cp .env.example .env.local
-# Edit .env.local with your DATABASE_URL (Neon)
+# Setup environment (defaults work — SQLite local file)
+cp .env.example .env
 
-# Run dev server
+# Create the database
+pnpm db:push
+
+# Sync real on-chain data (Robinhood + Blockscout)
+pnpm sync
+
+# Run dev server — full dashboard with live data
 pnpm dev
 ```
 
 ### Environment Variables
 
 ```bash
-# Required
-DATABASE_URL="postgresql://..."     # Neon Postgres connection
-CRON_SECRET="random-hex"           # Daily maintenance cron auth
-ADMIN_SYNC_SECRET="random-hex"     # Admin sync endpoint auth
+# Local SQLite database (default — no setup needed)
+DATABASE_URL="data/robin.db"
 
 # Pre-configured (defaults work)
 NEXT_PUBLIC_CHAIN_ID="4663"
 NEXT_PUBLIC_EXPLORER_URL="https://robinhoodchain.blockscout.com"
 ROBINHOOD_RPC_URL="https://rpc.mainnet.chain.robinhood.com"
 ROBINHOOD_ASSETS_API_URL="https://api.robinhood.com/rhj/assets"
-BLOCKSCOUT_API_BASE_URL="https://api.blockscout.com/4663/api/v2"
+BLOCKSCOUT_API_BASE_URL="https://robinhoodchain.blockscout.com/api/v2"
 ```
+
+> Vercel deployment is UI-only — no DB or secrets required. All data is
+> stored and synced locally (`pnpm sync` + `pnpm dev`).
 
 ### Generate Secrets
 

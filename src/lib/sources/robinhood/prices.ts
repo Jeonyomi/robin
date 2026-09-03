@@ -1,20 +1,23 @@
 import { z } from "zod";
 import { getAPIs } from "@/lib/config";
 
-// ── Raw Price Schema ────────────────────────────────────────────────────────
+// ── Raw Price Schema (verified against live /rhj/prices response) ───────────
+// Batch endpoint returns { quotes: [...] } — all assets in ONE request.
 
-const rawPriceSchema = z.object({
-  symbol: z.string(),
-  bid: z.number().optional(),
-  ask: z.number().optional(),
-  mid: z.number().optional(),
-  last: z.number().optional(),
-  tradingHalt: z.boolean().optional(),
-  dailyVolume: z.number().optional(),
-  timestamp: z.string().optional(),
+const rawQuoteSchema = z.object({
+  tokenSymbol: z.string(),
+  deployments: z
+    .array(z.object({ contractAddress: z.string(), chainId: z.number() }))
+    .optional(),
+  bid: z.string().optional(),
+  ask: z.string().optional(),
+  currency: z.string().optional(),
+  dailyTradingVolume: z.string().optional(),
+  isTradingHalt: z.boolean().optional(),
+  generatedAt: z.string().optional(),
 });
 
-export type RawRobinhoodPrice = z.infer<typeof rawPriceSchema>;
+export type RawRobinhoodQuote = z.infer<typeof rawQuoteSchema>;
 
 // ── Normalized Domain Model ─────────────────────────────────────────────────
 
@@ -43,50 +46,68 @@ export function adjustReferencePrice(
   return rawMid / multiplier;
 }
 
-// ── Adapter ─────────────────────────────────────────────────────────────────
+// ── Adapter — batch fetch of ALL reference quotes ───────────────────────────
+// Uses the batch endpoint (1 request) instead of per-symbol (rate-limited).
 
+export async function fetchAllReferencePrices(): Promise<NormalizedPrice[]> {
+  const url = `${getAPIs().robinhood.baseUrl}/rhj/prices`;
+
+  const response = await fetchWithRetry(url, 3);
+  if (!response.ok) {
+    throw new Error(`Robinhood prices API failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const quotes = data.quotes || [];
+  const result: NormalizedPrice[] = [];
+
+  for (const raw of quotes) {
+    const parsed = rawQuoteSchema.safeParse(raw);
+    if (!parsed.success) continue;
+
+    const quote = parsed.data;
+    const rawBid = quote.bid ? parseFloat(quote.bid) : null;
+    const rawAsk = quote.ask ? parseFloat(quote.ask) : null;
+    const rawMid = rawBid !== null && rawAsk !== null ? (rawBid + rawAsk) / 2 : rawBid ?? rawAsk;
+
+    result.push({
+      symbol: quote.tokenSymbol.toUpperCase(),
+      rawBid,
+      rawAsk,
+      rawMid,
+      currentMultiplier: null, // multiplier comes from canonical assets table
+      adjustedReferencePrice: rawMid,
+      tradingHalt: quote.isTradingHalt || false,
+      referenceTimestamp: quote.generatedAt ? new Date(quote.generatedAt) : new Date(),
+    });
+  }
+
+  return result;
+}
+
+// ── Retry helper (429 / 5xx → exponential backoff) ──────────────────────────
+
+async function fetchWithRetry(url: string, retries: number): Promise<Response> {
+  let delay = 1000;
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (response.ok || attempt >= retries) return response;
+
+    // Respect Retry-After when present
+    const retryAfter = response.headers.get("retry-after");
+    const wait = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
+    await new Promise((r) => setTimeout(r, wait));
+    delay *= 2;
+  }
+}
+
+// Kept for single-symbol use cases (rate-limited; prefer batch)
 export async function fetchReferencePrice(
   symbol: string,
   currentMultiplier: string | null,
 ): Promise<NormalizedPrice | null> {
-  const url = `${getAPIs().robinhood.baseUrl}/rhj/prices/${symbol}`;
-
-  try {
-    const response = await fetch(url, {
-      headers: { "Accept": "application/json" },
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) return null;
-      throw new Error(`Price API failed for ${symbol}: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const parsed = rawPriceSchema.safeParse(data);
-
-    if (!parsed.success) {
-      console.error(`Invalid price data for ${symbol}:`, parsed.error);
-      return null;
-    }
-
-    const raw = parsed.data;
-
-    // Calculate adjusted reference price: raw_mid / multiplier
-    const rawMid = raw.mid || raw.last || null;
-    const adjustedReferencePrice = adjustReferencePrice(rawMid, currentMultiplier);
-
-    return {
-      symbol: raw.symbol,
-      rawBid: raw.bid || null,
-      rawAsk: raw.ask || null,
-      rawMid: rawMid || null,
-      currentMultiplier,
-      adjustedReferencePrice,
-      tradingHalt: raw.tradingHalt || false,
-      referenceTimestamp: raw.timestamp ? new Date(raw.timestamp) : new Date(),
-    };
-  } catch (error) {
-    console.error(`Failed to fetch price for ${symbol}:`, error);
-    return null;
-  }
+  const all = await fetchAllReferencePrices();
+  const match = all.find((p) => p.symbol === symbol.toUpperCase());
+  if (!match) return null;
+  return { ...match, currentMultiplier, adjustedReferencePrice: adjustReferencePrice(match.rawMid, currentMultiplier) };
 }

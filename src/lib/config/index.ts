@@ -17,7 +17,7 @@ const envSchema = z.object({
   ROBINHOOD_API_BASE_URL: z.string().url().default("https://api.robinhood.com"),
 
   // Blockscout
-  BLOCKSCOUT_API_BASE_URL: z.string().url().default("https://api.blockscout.com/4663/api/v2"),
+  BLOCKSCOUT_API_BASE_URL: z.string().url().default("https://robinhoodchain.blockscout.com/api/v2"),
   BLOCKSCOUT_API_KEY: z.string().optional(),
 
   // Secrets — default to empty so build passes; validated at runtime

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
 import { tokens, canonicalAssets, tokenMetricSnapshots } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
 export async function GET(request: Request) {
   try {
+    if (!dataAvailable()) return uiOnlyResponse("stock-tokens");
+
     const { searchParams } = new URL(request.url);
     const window = searchParams.get("window") || "24h";
     const canonicalOnly = searchParams.get("canonicalOnly") === "true";

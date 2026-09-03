@@ -11,11 +11,21 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
+    "e2e:ui": "playwright test --ui",
+    "sync": "tsx scripts/sync.ts",
+    "sync:canonical": "tsx scripts/sync.ts canonical",
+    "sync:metadata": "tsx scripts/sync.ts metadata",
+    "sync:prices": "tsx scripts/sync.ts prices",
+    "sync:metrics": "tsx scripts/sync.ts metrics",
+    "sync:watch": "tsx scripts/sync.ts watch",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@tanstack/react-query": "^5.102.8",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
@@ -33,6 +43,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -42,6 +53,7 @@
     "eslint-config-next": "16.3.4",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.11"
   },

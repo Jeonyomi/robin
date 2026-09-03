@@ -1,191 +1,229 @@
-import { pgTable, varchar, text, integer, bigint, numeric, boolean, timestamp, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
+import {
+  sqliteTable, text, integer, real, uniqueIndex, index,
+} from "drizzle-orm/sqlite-core";
 
 // ── Canonical Assets ────────────────────────────────────────────────────────
 
-export const canonicalAssets = pgTable("canonical_assets", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  assetId: varchar("asset_id", { length: 64 }).unique().notNull(),
-  symbol: varchar("symbol", { length: 32 }).notNull(),
-  name: text("name"),
-  contractAddress: varchar("contract_address", { length: 42 }).unique().notNull(),
-  chainId: integer("chain_id").notNull(),
-  currentMultiplier: numeric("current_multiplier", { precision: 36, scale: 18 }),
-  pendingMultiplier: numeric("pending_multiplier", { precision: 36, scale: 18 }),
-  assetStatus: varchar("asset_status", { length: 32 }),
-  tradingCapabilities: jsonb("trading_capabilities"),
-  isin: varchar("isin", { length: 32 }),
-  sourceUpdatedAt: timestamp("source_updated_at"),
-  syncedAt: timestamp("synced_at").defaultNow(),
-});
+export const canonicalAssets = sqliteTable(
+  "canonical_assets",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id").unique().notNull(),
+    symbol: text("symbol").notNull(),
+    name: text("name"),
+    contractAddress: text("contract_address").unique().notNull(),
+    chainId: integer("chain_id").notNull(),
+    currentMultiplier: text("current_multiplier"),
+    pendingMultiplier: text("pending_multiplier"),
+    assetStatus: text("asset_status"),
+    tradingCapabilities: text("trading_capabilities", { mode: "json" }),
+    isin: text("isin"),
+    sourceUpdatedAt: integer("source_updated_at", { mode: "timestamp_ms" }),
+    syncedAt: integer("synced_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+);
 
 // ── Tokens ──────────────────────────────────────────────────────────────────
 
-export const tokens = pgTable("tokens", {
-  address: varchar("address", { length: 42 }).primaryKey(),
-  symbol: varchar("symbol", { length: 32 }),
-  name: text("name"),
-  decimals: integer("decimals"),
-  tokenType: varchar("token_type", { length: 32 }),
-  creatorAddress: varchar("creator_address", { length: 42 }),
-  createdBlock: bigint("created_block", { mode: "number" }),
-  createdAt: timestamp("created_at"),
-  isVerified: boolean("is_verified"),
-  isProxy: boolean("is_proxy"),
-  implementationAddress: varchar("implementation_address", { length: 42 }),
-  canonicalAssetId: varchar("canonical_asset_id", { length: 64 }),
-  canonicalStatus: varchar("canonical_status", { length: 32 }), // CANONICAL, NON_CANONICAL, TICKER_COLLISION, UNKNOWN
-  firstSeenAt: timestamp("first_seen_at").defaultNow(),
-  lastSeenAt: timestamp("last_seen_at").defaultNow(),
-}, (table) => [
-  index("tokens_canonical_status_idx").on(table.canonicalStatus),
-  index("tokens_canonical_asset_id_idx").on(table.canonicalAssetId),
-]);
+export const tokens = sqliteTable(
+  "tokens",
+  {
+    address: text("address").primaryKey(),
+    symbol: text("symbol"),
+    name: text("name"),
+    decimals: integer("decimals"),
+    tokenType: text("token_type"),
+    creatorAddress: text("creator_address"),
+    createdBlock: integer("created_block"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    isVerified: integer("is_verified", { mode: "boolean" }),
+    isProxy: integer("is_proxy", { mode: "boolean" }),
+    implementationAddress: text("implementation_address"),
+    canonicalAssetId: text("canonical_asset_id"),
+    canonicalStatus: text("canonical_status"), // CANONICAL, NON_CANONICAL, TICKER_COLLISION, UNKNOWN
+    firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+  (table) => [
+    index("tokens_canonical_status_idx").on(table.canonicalStatus),
+    index("tokens_canonical_asset_id_idx").on(table.canonicalAssetId),
+  ],
+);
 
 // ── Token Transfers ─────────────────────────────────────────────────────────
 
-export const tokenTransfers = pgTable("token_transfers", {
-  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  blockNumber: bigint("block_number", { mode: "number" }).notNull(),
-  txHash: varchar("tx_hash", { length: 66 }).notNull(),
-  logIndex: integer("log_index").notNull(),
-  tokenAddress: varchar("token_address", { length: 42 }).notNull(),
-  fromAddress: varchar("from_address", { length: 42 }).notNull(),
-  toAddress: varchar("to_address", { length: 42 }).notNull(),
-  rawValue: varchar("raw_value", { length: 78 }),
-  normalizedValue: numeric("normalized_value", { precision: 36, scale: 18 }),
-  timestamp: timestamp("timestamp").notNull(),
-}, (table) => [
-  uniqueIndex("token_transfers_unique_idx").on(table.txHash, table.logIndex, table.tokenAddress),
-  index("token_transfers_token_ts_idx").on(table.tokenAddress, table.timestamp),
-]);
+export const tokenTransfers = sqliteTable(
+  "token_transfers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    blockNumber: integer("block_number").notNull(),
+    txHash: text("tx_hash").notNull(),
+    logIndex: integer("log_index").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    fromAddress: text("from_address").notNull(),
+    toAddress: text("to_address").notNull(),
+    rawValue: text("raw_value"),
+    normalizedValue: real("normalized_value"),
+    timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("token_transfers_unique_idx").on(table.txHash, table.logIndex, table.tokenAddress),
+    index("token_transfers_token_ts_idx").on(table.tokenAddress, table.timestamp),
+  ],
+);
 
 // ── Economic Actions ────────────────────────────────────────────────────────
 
-export const economicActions = pgTable("economic_actions", {
-  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  txHash: varchar("tx_hash", { length: 66 }).notNull(),
-  actionIndex: integer("action_index").notNull(),
-  actionType: varchar("action_type", { length: 32 }).notNull(),
-  actorAddress: varchar("actor_address", { length: 42 }),
-  protocol: varchar("protocol", { length: 64 }),
-  inputAsset: varchar("input_asset", { length: 42 }),
-  inputAmount: numeric("input_amount", { precision: 36, scale: 18 }),
-  outputAsset: varchar("output_asset", { length: 42 }),
-  outputAmount: numeric("output_amount", { precision: 36, scale: 18 }),
-  usdValue: numeric("usd_value", { precision: 36, scale: 18 }),
-  metadata: jsonb("metadata"),
-  timestamp: timestamp("timestamp").notNull(),
-}, (table) => [
-  uniqueIndex("economic_actions_unique_idx").on(table.txHash, table.actionIndex),
-  index("economic_actions_actor_ts_idx").on(table.actorAddress, table.timestamp),
-  index("economic_actions_type_ts_idx").on(table.actionType, table.timestamp),
-]);
+export const economicActions = sqliteTable(
+  "economic_actions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    txHash: text("tx_hash").notNull(),
+    actionIndex: integer("action_index").notNull(),
+    actionType: text("action_type").notNull(),
+    actorAddress: text("actor_address"),
+    protocol: text("protocol"),
+    inputAsset: text("input_asset"),
+    inputAmount: real("input_amount"),
+    outputAsset: text("output_asset"),
+    outputAmount: real("output_amount"),
+    usdValue: real("usd_value"),
+    metadata: text("metadata", { mode: "json" }),
+    timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("economic_actions_unique_idx").on(table.txHash, table.actionIndex),
+    index("economic_actions_actor_ts_idx").on(table.actorAddress, table.timestamp),
+    index("economic_actions_type_ts_idx").on(table.actionType, table.timestamp),
+  ],
+);
 
 // ── Token Metric Snapshots ──────────────────────────────────────────────────
 
-export const tokenMetricSnapshots = pgTable("token_metric_snapshots", {
-  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  tokenAddress: varchar("token_address", { length: 42 }).notNull(),
-  window: varchar("window", { length: 16 }).notNull(), // 1h, 6h, 24h, 7d
-  holderCount: integer("holder_count"),
-  holderDelta: integer("holder_delta"),
-  activeHolderDelta: integer("active_holder_delta"),
-  uniqueBuyers: integer("unique_buyers"),
-  uniqueSellers: integer("unique_sellers"),
-  netFlowUsd: numeric("net_flow_usd", { precision: 36, scale: 18 }),
-  smartMoneyFlowUsd: numeric("smart_money_flow_usd", { precision: 36, scale: 18 }),
-  liquidityUsd: numeric("liquidity_usd", { precision: 36, scale: 18 }),
-  depth1pctUsd: numeric("depth_1pct_usd", { precision: 36, scale: 18 }),
-  volumeUsd: numeric("volume_usd", { precision: 36, scale: 18 }),
-  top10Share: numeric("top10_share", { precision: 6, scale: 4 }),
-  sybilRatio: numeric("sybil_ratio", { precision: 6, scale: 4 }),
-  dataCompleteness: numeric("data_completeness", { precision: 5, scale: 4 }),
-  calculatedAt: timestamp("calculated_at").defaultNow(),
-}, (table) => [
-  uniqueIndex("token_metrics_unique_idx").on(table.tokenAddress, table.window, table.calculatedAt),
-]);
+export const tokenMetricSnapshots = sqliteTable(
+  "token_metric_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tokenAddress: text("token_address").notNull(),
+    window: text("window").notNull(), // 1h, 6h, 24h, 7d
+    holderCount: integer("holder_count"),
+    holderDelta: integer("holder_delta"),
+    activeHolderDelta: integer("active_holder_delta"),
+    uniqueBuyers: integer("unique_buyers"),
+    uniqueSellers: integer("unique_sellers"),
+    netFlowUsd: real("net_flow_usd"),
+    smartMoneyFlowUsd: real("smart_money_flow_usd"),
+    liquidityUsd: real("liquidity_usd"),
+    depth1pctUsd: real("depth_1pct_usd"),
+    volumeUsd: real("volume_usd"),
+    top10Share: real("top10_share"),
+    sybilRatio: real("sybil_ratio"),
+    dataCompleteness: real("data_completeness"),
+    calculatedAt: integer("calculated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("token_metrics_unique_idx").on(table.tokenAddress, table.window, table.calculatedAt),
+  ],
+);
 
 // ── Stock Token Price Snapshots ─────────────────────────────────────────────
 
-export const stockTokenPriceSnapshots = pgTable("stock_token_price_snapshots", {
-  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  canonicalAssetId: varchar("canonical_asset_id", { length: 64 }).notNull(),
-  rawBid: numeric("raw_bid", { precision: 36, scale: 18 }),
-  rawAsk: numeric("raw_ask", { precision: 36, scale: 18 }),
-  rawMid: numeric("raw_mid", { precision: 36, scale: 18 }),
-  multiplier: numeric("multiplier", { precision: 36, scale: 18 }),
-  adjustedReferencePrice: numeric("adjusted_reference_price", { precision: 36, scale: 18 }),
-  dexMidPrice: numeric("dex_mid_price", { precision: 36, scale: 18 }),
-  premiumDiscount: numeric("premium_discount", { precision: 10, scale: 6 }),
-  referenceTimestamp: timestamp("reference_timestamp"),
-  snapshotAt: timestamp("snapshot_at").defaultNow(),
-});
+export const stockTokenPriceSnapshots = sqliteTable(
+  "stock_token_price_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    canonicalAssetId: text("canonical_asset_id").notNull(),
+    rawBid: real("raw_bid"),
+    rawAsk: real("raw_ask"),
+    rawMid: real("raw_mid"),
+    multiplier: real("multiplier"),
+    adjustedReferencePrice: real("adjusted_reference_price"),
+    dexMidPrice: real("dex_mid_price"),
+    premiumDiscount: real("premium_discount"),
+    referenceTimestamp: integer("reference_timestamp", { mode: "timestamp_ms" }),
+    snapshotAt: integer("snapshot_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+);
 
 // ── Wallet Features ─────────────────────────────────────────────────────────
 
-export const walletFeatures = pgTable("wallet_features", {
-  wallet: varchar("wallet", { length: 42 }).primaryKey(),
-  tradeCount: integer("trade_count"),
-  realizedPnlUsd: numeric("realized_pnl_usd", { precision: 36, scale: 18 }),
-  winRate: numeric("win_rate", { precision: 6, scale: 4 }),
-  entryLeadScore: numeric("entry_lead_score", { precision: 6, scale: 4 }),
-  smartMoneyScore: numeric("smart_money_score", { precision: 6, scale: 4 }),
-  botScore: numeric("bot_score", { precision: 6, scale: 4 }),
-  sybilScore: numeric("sybil_score", { precision: 6, scale: 4 }),
-  labels: jsonb("labels"),
-  calculatedAt: timestamp("calculated_at").defaultNow(),
-});
+export const walletFeatures = sqliteTable(
+  "wallet_features",
+  {
+    wallet: text("wallet").primaryKey(),
+    tradeCount: integer("trade_count"),
+    realizedPnlUsd: real("realized_pnl_usd"),
+    winRate: real("win_rate"),
+    entryLeadScore: real("entry_lead_score"),
+    smartMoneyScore: real("smart_money_score"),
+    botScore: real("bot_score"),
+    sybilScore: real("sybil_score"),
+    labels: text("labels", { mode: "json" }),
+    calculatedAt: integer("calculated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+);
 
 // ── Signals ─────────────────────────────────────────────────────────────────
 
-export const signals = pgTable("signals", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  entityType: varchar("entity_type", { length: 32 }).notNull(),
-  entityId: varchar("entity_id", { length: 66 }).notNull(),
-  signalType: varchar("signal_type", { length: 64 }).notNull(),
-  rawScore: numeric("raw_score", { precision: 6, scale: 2 }),
-  riskScore: numeric("risk_score", { precision: 6, scale: 2 }),
-  adjustedScore: numeric("adjusted_score", { precision: 6, scale: 2 }),
-  confidence: varchar("confidence", { length: 16 }),
-  dataCompleteness: numeric("data_completeness", { precision: 5, scale: 4 }),
-  evidence: jsonb("evidence"),
-  invalidators: jsonb("invalidators"),
-  riskFlags: jsonb("risk_flags"),
-  windowStart: timestamp("window_start"),
-  windowEnd: timestamp("window_end"),
-  createdAt: timestamp("created_at").defaultNow(),
-  status: varchar("status", { length: 16 }),
-}, (table) => [
-  index("signals_type_idx").on(table.signalType),
-  index("signals_entity_idx").on(table.entityId, table.createdAt),
-  index("signals_created_score_idx").on(table.createdAt, table.adjustedScore),
-]);
+export const signals = sqliteTable(
+  "signals",
+  {
+    id: text("id").primaryKey(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    signalType: text("signal_type").notNull(),
+    rawScore: real("raw_score"),
+    riskScore: real("risk_score"),
+    adjustedScore: real("adjusted_score"),
+    confidence: text("confidence"),
+    dataCompleteness: real("data_completeness"),
+    evidence: text("evidence", { mode: "json" }),
+    invalidators: text("invalidators", { mode: "json" }),
+    riskFlags: text("risk_flags", { mode: "json" }),
+    windowStart: integer("window_start", { mode: "timestamp_ms" }),
+    windowEnd: integer("window_end", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+    status: text("status"),
+  },
+  (table) => [
+    index("signals_type_idx").on(table.signalType),
+    index("signals_entity_idx").on(table.entityId, table.createdAt),
+    index("signals_created_score_idx").on(table.createdAt, table.adjustedScore),
+  ],
+);
 
 // ── Source Sync State ───────────────────────────────────────────────────────
 
-export const sourceSyncState = pgTable("source_sync_state", {
-  source: varchar("source", { length: 32 }).notNull(),
-  jobName: varchar("job_name", { length: 64 }).notNull(),
-  cursor: jsonb("cursor"),
-  lastStartedAt: timestamp("last_started_at"),
-  lastSuccessAt: timestamp("last_success_at"),
-  lastErrorAt: timestamp("last_error_at"),
-  lastError: text("last_error"),
-  recordsProcessed: integer("records_processed"),
-  status: varchar("status", { length: 16 }),
-}, (table) => ({
-  pk: uniqueIndex("source_sync_state_pk").on(table.source, table.jobName),
-}));
+export const sourceSyncState = sqliteTable(
+  "source_sync_state",
+  {
+    source: text("source").notNull(),
+    jobName: text("job_name").notNull(),
+    cursor: text("cursor", { mode: "json" }),
+    lastStartedAt: integer("last_started_at", { mode: "timestamp_ms" }),
+    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    lastErrorAt: integer("last_error_at", { mode: "timestamp_ms" }),
+    lastError: text("last_error"),
+    recordsProcessed: integer("records_processed"),
+    status: text("status"),
+  },
+  (table) => [
+    uniqueIndex("source_sync_state_pk").on(table.source, table.jobName),
+  ],
+);
 
 // ── Protocol Registry ───────────────────────────────────────────────────────
 
-export const protocolRegistry = pgTable("protocol_registry", {
-  address: varchar("address", { length: 42 }).primaryKey(),
-  protocol: varchar("protocol", { length: 64 }),
-  role: varchar("role", { length: 32 }), // ROUTER, POOL, BRIDGE, BUNDLER, PAYMASTER, TREASURY, SYSTEM
-  chainId: integer("chain_id"),
-  source: varchar("source", { length: 64 }),
-  verified: boolean("verified"),
-  metadata: jsonb("metadata"),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+export const protocolRegistry = sqliteTable(
+  "protocol_registry",
+  {
+    address: text("address").primaryKey(),
+    protocol: text("protocol"),
+    role: text("role"), // ROUTER, POOL, BRIDGE, BUNDLER, PAYMASTER, TREASURY, SYSTEM
+    chainId: integer("chain_id"),
+    source: text("source"),
+    verified: integer("verified", { mode: "boolean" }),
+    metadata: text("metadata", { mode: "json" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()),
+  },
+);

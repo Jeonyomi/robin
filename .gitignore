@@ -43,3 +43,7 @@ next-env.d.ts
 # Test artifacts
 /test-results
 /playwright-report
+
+# Local data (SQLite) — never commit
+/data/
+.env

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
 import { tokens, tokenTransfers, signals, sourceSyncState, economicActions } from "@/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 export async function GET(request: Request) {
   try {
+    if (!dataAvailable()) return uiOnlyResponse("overview");
+
     const { searchParams } = new URL(request.url);
     const window = searchParams.get("window") || "24h";
 
@@ -41,10 +44,12 @@ export async function GET(request: Request) {
       .from(economicActions)
       .where(and(gte(economicActions.timestamp, windowStart), eq(economicActions.actionType, "SWAP")));
 
-    // Capital flow timeline from economic actions (bridge + swap grouped hourly)
+    // Capital flow timeline from economic actions (bridge + swap grouped hourly).
+    // SQLite stores timestamps as unix ms (integer), so bucket with strftime.
+    const hourExpr = sql<string>`strftime('%Y-%m-%dT%H:00:00.000Z', timestamp / 1000, 'unixepoch')`;
     const timelineRows = await db
       .select({
-        hour: sql<string>`date_trunc('hour', timestamp)`,
+        hour: hourExpr,
         bridgeIn: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'BRIDGE_IN' THEN usd_value ELSE 0 END), 0)`,
         bridgeOut: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'BRIDGE_OUT' THEN usd_value ELSE 0 END), 0)`,
         dexBuy: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'SWAP' AND usd_value >= 0 THEN usd_value ELSE 0 END), 0)`,
@@ -52,11 +57,11 @@ export async function GET(request: Request) {
       })
       .from(economicActions)
       .where(gte(economicActions.timestamp, windowStart))
-      .groupBy(sql`date_trunc('hour', timestamp)`)
-      .orderBy(sql`date_trunc('hour', timestamp)`);
+      .groupBy(hourExpr)
+      .orderBy(hourExpr);
 
     const timeline = timelineRows.map((r) => ({
-      timestamp: new Date(r.hour).toISOString(),
+      timestamp: r.hour,
       bridgeIn: Number(r.bridgeIn) || 0,
       bridgeOut: Number(r.bridgeOut) || 0,
       dexBuy: Number(r.dexBuy) || 0,

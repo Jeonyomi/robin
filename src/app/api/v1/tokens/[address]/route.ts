@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
 import { tokens, canonicalAssets, tokenMetricSnapshots, signals } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -8,6 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ address: string }> },
 ) {
   try {
+    if (!dataAvailable()) return uiOnlyResponse("tokens/[address]");
+
     const { address } = await params;
     const db = getDb();
     const normalizedAddress = address.toLowerCase();

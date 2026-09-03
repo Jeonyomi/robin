@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
 import { sourceSyncState } from "@/db/schema";
 import { desc } from "drizzle-orm";
 
 export async function GET() {
   try {
+    if (!dataAvailable()) return uiOnlyResponse("source-health");
+
     // Get all sync states
     const db = getDb();
     const syncStates = await db

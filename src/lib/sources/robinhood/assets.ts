@@ -9,14 +9,23 @@ export {
   isSameAddress,
 } from "@/lib/domain/identity";
 
-// ── Raw API Schema ──────────────────────────────────────────────────────────
+// ── Raw API Schema (verified against live /rhj/assets response) ─────────────
+// Top-level: { assets: [...] }
+// Each asset has deployments: [{ contractAddress, chainId, networkName }]
 
 const rawAssetSchema = z.object({
   id: z.string(),
   tokenSymbol: z.string(),
   tokenName: z.string().nullable().optional(),
-  contractAddress: z.string(),
-  chainId: z.number(),
+  deployments: z
+    .array(
+      z.object({
+        contractAddress: z.string(),
+        chainId: z.number(),
+        networkName: z.string().optional(),
+      }),
+    )
+    .optional(),
   currentMultiplier: z.string().optional(),
   pendingMultiplier: z.string().nullable().optional(),
   status: z.string().optional(),
@@ -26,8 +35,6 @@ const rawAssetSchema = z.object({
 });
 
 export type RawRobinhoodAsset = z.infer<typeof rawAssetSchema>;
-
-// ── Normalized Domain Model ─────────────────────────────────────────────────
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
@@ -42,7 +49,7 @@ export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
   }
 
   const data = await response.json();
-  const assets = Array.isArray(data) ? data : data.results || data.assets || [];
+  const assets = Array.isArray(data) ? data : data.assets || [];
 
   const normalized: CanonicalAsset[] = [];
 
@@ -52,16 +59,19 @@ export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
 
     const item = parsed.data;
 
-    // Only include assets on Robinhood Chain
-    if (item.chainId !== getChain().id) continue;
+    // Contract lives in deployments[] — find the Robinhood Chain deployment
+    const deployment = (item.deployments || []).find(
+      (d) => d.chainId === getChain().id && d.contractAddress,
+    );
+    if (!deployment) continue; // not deployed on Robinhood Chain
 
     normalized.push({
       id: `rhj-${item.id}`,
       assetId: item.id,
       symbol: item.tokenSymbol.toUpperCase(),
       name: item.tokenName || null,
-      contractAddress: item.contractAddress.toLowerCase(),
-      chainId: item.chainId,
+      contractAddress: deployment.contractAddress.toLowerCase(),
+      chainId: deployment.chainId,
       currentMultiplier: item.currentMultiplier || null,
       pendingMultiplier: item.pendingMultiplier || null,
       status: item.status || null,

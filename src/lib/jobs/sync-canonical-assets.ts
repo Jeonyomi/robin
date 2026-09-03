@@ -1,7 +1,7 @@
 import { getDb } from "@/lib/db";
 import { canonicalAssets, tokens, sourceSyncState } from "@/db/schema";
 import { fetchCanonicalAssets, detectTickerCollisions } from "@/lib/sources/robinhood/assets";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export async function syncCanonicalAssets(): Promise<{
   processed: number;
@@ -128,10 +128,7 @@ export async function syncCanonicalAssets(): Promise<{
         recordsProcessed: assets.length,
         lastError: null,
       })
-      .where(
-        eq(sourceSyncState.source, "robinhood"),
-        // Note: drizzle doesn't support two eq in where like this, but the composite PK handles it
-      );
+      .where(and(eq(sourceSyncState.source, "robinhood"), eq(sourceSyncState.jobName, "canonical-assets")));
 
     return { processed: assets.length, created, updated, collisions };
   } catch (error) {
@@ -144,7 +141,7 @@ export async function syncCanonicalAssets(): Promise<{
         lastError: errorMessage,
         status: "error",
       })
-      .where(eq(sourceSyncState.source, "robinhood"));
+      .where(and(eq(sourceSyncState.source, "robinhood"), eq(sourceSyncState.jobName, "canonical-assets")));
 
     throw error;
   }
