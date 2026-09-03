@@ -3,8 +3,10 @@
  * payloads that the local machine produces.
  *
  * Flow: `pnpm sync` (locally) → builds data/snapshot.json → uploads to Vercel
- * Blob → the public Blob URL is configured as SNAPSHOT_URL on Vercel. API
- * routes that find no local DB call loadSnapshot() and serve the baked data.
+ * Blob (public store, fixed `robin/snapshot.json` path) → the deployed API
+ * routes fetch that URL. The public URL is baked in as a fallback so the
+ * deployment works even without the SNAPSHOT_URL env var; set SNAPSHOT_URL
+ * to override it if the store is ever migrated.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -25,6 +27,10 @@ export interface Snapshot {
   syncStates: SyncStateRow[];
 }
 
+/** Public Blob store URL the hourly local sync overwrites. */
+const DEFAULT_SNAPSHOT_URL =
+  "https://n6bn9jsnnus9uoav.public.blob.vercel-storage.com/robin/snapshot.json";
+
 const TTL_MS = 5 * 60 * 1000;
 
 let cached: Snapshot | null = null;
@@ -33,7 +39,11 @@ let lastError: string | null = null;
 
 /** Why the snapshot is unavailable — surfaced in API meta for debugging. */
 export function getSnapshotStatus(): { urlConfigured: boolean; lastError: string | null } {
-  return { urlConfigured: !!process.env.SNAPSHOT_URL, lastError };
+  return { urlConfigured: true, lastError };
+}
+
+function snapshotUrl(): string {
+  return process.env.SNAPSHOT_URL || DEFAULT_SNAPSHOT_URL;
 }
 
 function localSnapshotPath(): string {
@@ -51,20 +61,16 @@ export async function loadSnapshot(): Promise<Snapshot | null> {
   cached = null;
 
   try {
-    const url = process.env.SNAPSHOT_URL;
-    if (url) {
-      const res = await fetch(url, { next: { revalidate: 300 } });
-      if (res.ok) {
-        cached = (await res.json()) as Snapshot;
-        cachedAt = Date.now();
-        lastError = null;
-        return cached;
-      }
-      lastError = `fetch failed: ${res.status} ${res.statusText}`;
-      console.error(`Snapshot fetch failed: ${res.status} ${res.statusText}`);
-    } else {
-      lastError = "SNAPSHOT_URL not set";
+    const url = snapshotUrl();
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (res.ok) {
+      cached = (await res.json()) as Snapshot;
+      cachedAt = Date.now();
+      lastError = null;
+      return cached;
     }
+    lastError = `fetch failed: ${res.status} ${res.statusText}`;
+    console.error(`Snapshot fetch failed: ${res.status} ${res.statusText}`);
 
     if (snapshotExistsLocally()) {
       cached = JSON.parse(fs.readFileSync(localSnapshotPath(), "utf8")) as Snapshot;
