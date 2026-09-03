@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { WatchlistButton } from "@/components/watchlist-button";
 
 type TokenDetail = {
   address: string;
@@ -46,10 +47,6 @@ function CanonicalBadge({ status }: { status: string }) {
   if (status === "NON_CANONICAL") return <Badge variant="destructive">⚠ Non-Canonical</Badge>;
   if (status === "TICKER_COLLISION") return <Badge variant="destructive">⚠ Ticker Collision</Badge>;
   return <Badge variant="secondary">Unknown</Badge>;
-}
-
-function formatAddress(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
 function formatUsd(value: string | number | null) {
@@ -123,6 +120,7 @@ export default function TokenDetailPage() {
             <h1 className="text-3xl font-bold">{token.symbol || "Unknown"}</h1>
             <CanonicalBadge status={token.canonicalStatus} />
             {token.isVerified && <Badge variant="outline">✓ Verified</Badge>}
+            <WatchlistButton address={token.address} />
           </div>
           <p className="text-muted-foreground">{token.name}</p>
           <p className="text-sm font-mono text-muted-foreground mt-1">

@@ -44,8 +44,9 @@ export function calculateOpportunityScore(params: {
     }
   }
 
-  // Renormalize if some factors are missing
-  const rawScore = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : 0;
+  // Renormalize if some factors are missing. Factors are already 0-100 and
+  // weights sum to 1.0, so weightedSum is the raw score (no extra *100).
+  const rawScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
 
   // Apply risk adjustment
   const adjustedScore = rawScore * (1 - params.riskScore / 125);

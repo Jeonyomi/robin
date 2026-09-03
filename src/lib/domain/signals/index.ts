@@ -212,7 +212,9 @@ export function generateStockTokenDivergenceSignal(params: {
   const rawScore = (conditionsMet / 5) * 100;
   const confidence = conditionsMet >= 5 ? "HIGH" : conditionsMet >= 4 ? "MEDIUM" : "LOW";
 
-  if (conditionsMet < 4) return null;
+  // Master prompt defines STOCK_TOKEN_DIVERGENCE with AND semantics — every
+  // condition is required. A signal missing any one of them is not actionable.
+  if (conditionsMet < 5) return null;
 
   const now = new Date();
   const windowStart = new Date(params.windowEnd.getTime() - 60 * 60 * 1000);

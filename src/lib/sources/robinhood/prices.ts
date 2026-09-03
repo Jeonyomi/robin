@@ -29,6 +29,20 @@ export type NormalizedPrice = {
   referenceTimestamp: Date;
 };
 
+// ── Multiplier Normalization (pure — testable) ───────────────────────────────
+// Raw underlier mid must be divided by currentMultiplier to get the
+// onchain-adjusted reference price. Never divide by zero or null.
+
+export function adjustReferencePrice(
+  rawMid: number | null,
+  currentMultiplier: string | null,
+): number | null {
+  if (rawMid === null || currentMultiplier === null) return null;
+  const multiplier = parseFloat(currentMultiplier);
+  if (!Number.isFinite(multiplier) || multiplier === 0) return null;
+  return rawMid / multiplier;
+}
+
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export async function fetchReferencePrice(
@@ -56,13 +70,10 @@ export async function fetchReferencePrice(
     }
 
     const raw = parsed.data;
-    const multiplier = currentMultiplier ? parseFloat(currentMultiplier) : 1;
 
     // Calculate adjusted reference price: raw_mid / multiplier
     const rawMid = raw.mid || raw.last || null;
-    const adjustedReferencePrice = rawMid && multiplier
-      ? rawMid / multiplier
-      : null;
+    const adjustedReferencePrice = adjustReferencePrice(rawMid, currentMultiplier);
 
     return {
       symbol: raw.symbol,

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { FlowTimelineChart, type FlowTimelinePoint } from "@/components/charts/flow-timeline";
+import { ActivityCompositionChart, type ActivityCompositionItem } from "@/components/charts/activity-composition";
 
 type OverviewData = {
   netCapitalInflow24h: number;
@@ -14,6 +16,8 @@ type OverviewData = {
   highRiskAlerts: number;
   tokenCount: number;
   lastUpdatedAt: string;
+  timeline: FlowTimelinePoint[];
+  composition: ActivityCompositionItem[];
 };
 
 function MetricCard({ title, value, subtitle, trend, link }: {
@@ -59,7 +63,7 @@ function formatUsd(value: number) {
 
 export default function DashboardPage() {
   const [data, setData] = useState<OverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/v1/overview")
@@ -118,6 +122,29 @@ export default function DashboardPage() {
             trend={data?.highRiskAlerts ? "negative" : "neutral"}
             link="/alerts"
           />
+        </div>
+
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Capital Flow Timeline</CardTitle>
+              <p className="text-xs text-muted-foreground">Bridge in/out and DEX buy/sell by hour</p>
+            </CardHeader>
+            <CardContent>
+              <FlowTimelineChart data={data?.timeline || []} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Activity Composition</CardTitle>
+              <p className="text-xs text-muted-foreground">Economic actions by type</p>
+            </CardHeader>
+            <CardContent>
+              <ActivityCompositionChart data={data?.composition || []} />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Quick access panels */}

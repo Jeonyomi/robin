@@ -1,14 +1,14 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/db/schema";
+import { env } from "@/lib/config";
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getDb() {
   if (_db) return _db;
 
-  // Lazy import env to avoid build-time evaluation
-  const { env } = require("@/lib/config");
+  // env is a lazy Proxy — validated only on first property access
   const url = env.DATABASE_URL;
 
   if (!url) {

@@ -1,5 +1,13 @@
 import { z } from "zod";
 import { getAPIs, getChain } from "@/lib/config";
+import type { CanonicalAsset } from "@/lib/domain/identity";
+export type { CanonicalAsset, CanonicalStatus } from "@/lib/domain/identity";
+export {
+  resolveCanonicalAsset,
+  detectTickerCollisions,
+  normalizeAddress,
+  isSameAddress,
+} from "@/lib/domain/identity";
 
 // ── Raw API Schema ──────────────────────────────────────────────────────────
 
@@ -20,21 +28,6 @@ const rawAssetSchema = z.object({
 export type RawRobinhoodAsset = z.infer<typeof rawAssetSchema>;
 
 // ── Normalized Domain Model ─────────────────────────────────────────────────
-
-export type CanonicalAsset = {
-  id: string;
-  assetId: string;
-  symbol: string;
-  name: string | null;
-  contractAddress: string;
-  chainId: number;
-  currentMultiplier: string | null;
-  pendingMultiplier: string | null;
-  status: string | null;
-  tradingCapabilities: unknown;
-  isin: string | null;
-  sourceUpdatedAt: Date;
-};
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
@@ -79,57 +72,4 @@ export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
   }
 
   return normalized;
-}
-
-// ── Canonical Resolver ──────────────────────────────────────────────────────
-
-export type CanonicalStatus = "CANONICAL" | "NON_CANONICAL" | "TICKER_COLLISION" | "UNKNOWN";
-
-export function resolveCanonicalAsset(
-  chainId: number,
-  contractAddress: string,
-  canonicalAssets: CanonicalAsset[],
-): { status: CanonicalStatus; asset: CanonicalAsset | null } {
-  const normalizedAddress = contractAddress.toLowerCase();
-
-  // Exact address match on correct chain
-  const match = canonicalAssets.find(
-    (a) => a.chainId === chainId && a.contractAddress.toLowerCase() === normalizedAddress,
-  );
-
-  if (match) {
-    return { status: "CANONICAL", asset: match };
-  }
-
-  // Check if there's a symbol/name collision
-  // (This is a simplified check - in production, we'd match by symbol)
-  return { status: "NON_CANONICAL", asset: null };
-}
-
-// ── Ticker Collision Detection ──────────────────────────────────────────────
-
-export function detectTickerCollisions(
-  canonicalAssets: CanonicalAsset[],
-): Array<{ symbol: string; canonicalAddress: string; collisionAddresses: string[] }> {
-  const bySymbol = new Map<string, CanonicalAsset[]>();
-
-  for (const asset of canonicalAssets) {
-    const existing = bySymbol.get(asset.symbol) || [];
-    existing.push(asset);
-    bySymbol.set(asset.symbol, existing);
-  }
-
-  const collisions: Array<{ symbol: string; canonicalAddress: string; collisionAddresses: string[] }> = [];
-
-  for (const [symbol, assets] of bySymbol) {
-    if (assets.length > 1) {
-      collisions.push({
-        symbol,
-        canonicalAddress: assets[0].contractAddress,
-        collisionAddresses: assets.slice(1).map((a) => a.contractAddress),
-      });
-    }
-  }
-
-  return collisions;
 }

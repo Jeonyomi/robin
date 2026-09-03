@@ -1,4 +1,4 @@
-import { RISK_WEIGHTS, RISK_GATES } from "@/lib/config";
+import { RISK_GATES } from "@/lib/config";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

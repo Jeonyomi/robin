@@ -21,6 +21,7 @@ const navItems = [
 ];
 
 const settingsItems = [
+  { href: "/watchlist", label: "Watchlist", icon: "★" },
   { href: "/settings/data-sources", label: "Data Sources", icon: "⚙️" },
 ];
 
