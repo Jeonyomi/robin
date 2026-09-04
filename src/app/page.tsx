@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
 
-const WINDOWS = ["1h", "6h", "24h", "7d"];
+const WINDOWS = ["1h", "6h", "24h"];
 
 function compact(value: number | null | undefined) {
   if (value == null) return "Not observed";
@@ -56,8 +56,6 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [window]);
 
-  const hasObservations = Boolean(data?.activity?.transferEvents);
-
   return (
     <div className="page-shell">
       <section className="hero-grid">
@@ -88,7 +86,7 @@ export default function DashboardPage() {
       <div className="toolbar">
         <div className="window-tabs" aria-label="Observation window">
           {WINDOWS.map((item) => (
-            <button key={item} className={window === item ? "active" : ""} onClick={() => setWindow(item)}>
+            <button key={item} className={window === item ? "active" : ""} aria-pressed={window === item} onClick={() => setWindow(item)}>
               {item}
             </button>
           ))}
@@ -102,7 +100,7 @@ export default function DashboardPage() {
         <>
           <section className="metric-grid" aria-label="Observed activity summary">
             <Metric label="TRANSFER EVENTS" value={compact(data?.activity.transferEvents)} note={`Stored observations / ${window}`} />
-            <Metric label="ACTIVE ADDRESSES" value={compact(data?.activity.activeAddresses)} note="Unique senders and recipients" />
+            <Metric label="ACTIVE ADDRESSES" value={compact(data?.activity.activeAddresses)} note="Unique addresses, including contracts" />
             <Metric label="ACTIVE TOKENS" value={compact(data?.activity.activeTokens)} note={`Of ${compact(data?.coverage.trackedTokens)} tracked canonical assets`} />
             <Metric label="CHAIN TRANSACTIONS" value={compact(data?.chain?.totalTransactions)} note="Chain-wide / Blockscout" />
           </section>
@@ -110,7 +108,7 @@ export default function DashboardPage() {
           <section className="scope-banner">
             <div>
               <span className="scope-label">OBSERVATION COVERAGE</span>
-              <strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Full initial registry coverage" : `${data?.coverage.cycleProgressPct ?? 0}% of initial rotation`}</strong>
+              <strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Registry rotation completed" : `${data?.coverage.cycleProgressPct ?? 0}% of initial rotation`}</strong>
               <p>{data?.coverage.completedCycles ?? 0} full cycles · {data?.coverage.scannedInCycle ?? 0} of {data?.coverage.trackedTokens ?? 0} tokens in the current cycle.</p>
             </div>
             <div className="coverage-track" aria-label={`${data?.coverage.cycleProgressPct ?? 0}% coverage`}>
@@ -149,41 +147,26 @@ export default function DashboardPage() {
             </article>
           </section>
 
-          <section className="panel leaders-panel">
+          <section className="panel comparison-withheld">
             <div className="panel-heading">
               <div>
-                <p className="section-kicker">ACTIVITY LENS</p>
-                <h2>Tokens drawing observable attention</h2>
-                <p>Ranked only by transfer count and unique addresses within the selected window.</p>
+                <p className="section-kicker">COMPARATIVE ANALYSIS</p>
+                <h2>Ranking and momentum withheld</h2>
+                <p>Tokens are collected through rotating and hot-token batches with page limits. Cross-token scores remain hidden until observation exposure and truncation can be compared fairly.</p>
               </div>
-              <Link className="text-link" href="/opportunities">View methodology and all leaders →</Link>
+              <Link className="text-link" href="/opportunities">Read the release gate →</Link>
             </div>
-
-            {!hasObservations ? (
-              <div className="empty-state">No stored transfers in this window. Run the transfer indexer or choose a wider window.</div>
-            ) : (
-              <div className="leader-list">
-                {data?.topTokens.slice(0, 6).map((token, index) => (
-                  <Link href={`/tokens/${token.address}`} className="leader-row" key={token.address}>
-                    <span className="leader-rank">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="leader-asset"><strong>{token.symbol || "Unknown"}</strong><small>{token.name || address(token.address)}</small></span>
-                    <span className="leader-evidence"><strong>{compact(token.transferCount)} transfers</strong><small>{compact(token.activeAddresses)} addresses · {token.evidence[1]}</small></span>
-                    <span className="leader-index"><small>Activity index</small><strong>{token.activityIndex}</strong></span>
-                  </Link>
-                ))}
-              </div>
-            )}
           </section>
 
           <section className="panel recent-panel">
             <div className="panel-heading">
               <div>
                 <p className="section-kicker">RAW EVIDENCE</p>
-                <h2>Latest indexed transfers</h2>
+                <h2>Latest indexed transfer events</h2>
               </div>
               <Link className="text-link" href="/capital-flow">Explore transfer activity →</Link>
             </div>
-            <div className="transfer-table-wrap">
+            <div className="transfer-table-wrap" role="region" aria-label="Latest indexed transfer events" tabIndex={0}>
               <table className="data-table">
                 <thead><tr><th>Token</th><th>Type</th><th>From</th><th>To</th><th>Block</th><th>Observed</th></tr></thead>
                 <tbody>
@@ -204,7 +187,7 @@ export default function DashboardPage() {
           </section>
 
           <footer className="method-footer">
-            <strong>Reading rule:</strong> Activity is not demand, transfer count is not volume, and this dashboard is not investment advice. Every number is labeled by scope and source.
+            <strong>Reading rule:</strong> One row is an ERC-20 transfer event, not necessarily one transaction or one person. Activity is not demand, transfer count is not value, and this dashboard is not investment advice.
           </footer>
         </>
       )}

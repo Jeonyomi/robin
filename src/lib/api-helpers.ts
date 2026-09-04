@@ -2,6 +2,26 @@ import { NextResponse } from "next/server";
 import { hasDatabase } from "@/lib/db";
 import { getSnapshotStatus } from "@/lib/snapshot";
 
+export const PUBLIC_OBSERVATION_WINDOWS = ["1h", "6h", "24h"] as const;
+export type PublicObservationWindow = (typeof PUBLIC_OBSERVATION_WINDOWS)[number];
+
+export function parseObservationWindow(request: Request): PublicObservationWindow | null {
+  const value = new URL(request.url).searchParams.get("window") || "24h";
+  return PUBLIC_OBSERVATION_WINDOWS.includes(value as PublicObservationWindow)
+    ? value as PublicObservationWindow
+    : null;
+}
+
+export function invalidWindowResponse() {
+  return NextResponse.json(
+    {
+      error: "Invalid observation window",
+      allowed: PUBLIC_OBSERVATION_WINDOWS,
+    },
+    { status: 400 },
+  );
+}
+
 /**
  * Fallback mode: when Cloud Postgres is not configured, the API serves the
  * last published Blob snapshot and otherwise returns an explicit empty state.

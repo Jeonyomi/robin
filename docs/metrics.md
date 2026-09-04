@@ -88,7 +88,7 @@ A value calculated from transfers stored by Robin's bounded rotating collector. 
              previous_window_transfers
 ```
 
-If the previous window contains zero transfers and the current window is non-zero, the result is labeled `newly observed` rather than assigned an infinite percentage.
+This formula remains research-only and is not published. The rotating collector and hot-token revisits can produce unequal observation exposure, so a zero prior count does not prove new activity.
 
 ### Holder count
 
@@ -103,7 +103,7 @@ If the previous window contains zero transfers and the current window is non-zer
 
 ## Activity Index
 
-The Activity Index ranks tokens within the selected response set.
+The former Activity Index formula is retained below only as a research reference. It is not published in the operating dashboard or public API.
 
 ```text
 transfer_component = token transfers / maximum token transfers in result
@@ -119,6 +119,8 @@ Properties:
 - Not comparable across different result sets
 - Does not include price, liquidity, PnL, wallet identity, or prediction
 - Intended to prioritize investigation only
+
+**Release gate:** do not publish this score until every compared token has recorded observation duration, pages fetched, truncation state, and equivalent current/prior-window coverage.
 
 ## Coverage metrics
 

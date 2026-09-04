@@ -2,7 +2,7 @@
 
 Robin collects free, publicly available Robinhood Chain data, stores the raw observations, and turns them into source-labeled descriptive analysis.
 
-> The product is an onchain research and screening dashboard. It does not provide investment advice, trade execution, or predictive signals.
+> Independent public-source research project. Not affiliated with or endorsed by Robinhood Markets, Inc. The product does not provide investment advice, trade execution, or predictive signals.
 
 ## Product question
 
@@ -12,7 +12,7 @@ Robin answers this in three layers:
 
 1. **Chain state**: public Blockscout network statistics.
 2. **Tracked assets**: Robinhood's canonical asset registry matched by contract address.
-3. **Observed activity**: page-bounded token transfers, participating addresses, mint/burn events, and window-over-window change.
+3. **Observed activity**: page-bounded token transfer events, unique addresses, and mint/burn events.
 
 The dashboard keeps chain-wide statistics separate from the rotating tracked-token sample. Missing data remains unavailable rather than being replaced with synthetic values.
 
@@ -39,10 +39,10 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 - Chain-wide total transactions, addresses, block height, block time, and gas snapshot
 - Stored transfer events in the selected window
-- Unique participating addresses and active tracked tokens
+- Unique addresses, including contracts, and active tracked tokens
 - Current transfer-index rotation coverage and freshness
 - Hourly transfer and address participation trend
-- Activity leaders with evidence and direct explorer links
+- Explicit withholding of cross-token rankings until observation exposure is comparable
 - Latest raw transfer observations
 
 ### Asset Registry
@@ -55,20 +55,12 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 ### Transfer Activity
 
 - Transfer, mint, and burn event counts
-- Relative activity by token
 - Recent transaction evidence
 - Explicit lower-bound and coverage caveats
 
 ### Activity Lens
 
-A descriptive relative index, not an investment score:
-
-```text
-Activity Index = 60% × relative transfer count
-               + 40% × relative unique addresses
-```
-
-The leader in each selected window anchors normalization. Scores are not comparable across different windows. Momentum and holder change are shown as separate evidence.
+Cross-token ranking and momentum are fail-closed. They remain withheld until the collector records comparable per-token observation exposure, page truncation, and complete current/prior windows. The page publishes the release gate instead of a provisional score.
 
 ## Collection design
 
@@ -83,6 +75,8 @@ The hourly sync uses a bounded rotating collector:
 - Deduplication by transaction hash + log index + token address
 
 At default settings, the 194-token registry receives an initial full rotation over approximately nine hourly runs. Page limits mean transfer totals can be lower bounds for very active tokens. The UI states this explicitly.
+
+The public observation windows are `1h`, `6h`, and `24h`. Longer comparative windows remain disabled until sufficient equivalent history is available.
 
 Configurable limits:
 
@@ -108,6 +102,8 @@ Robinhood canonical registry
 ```
 
 Heuristic signal generation is not part of the default pipeline. Synthetic economic actions remain fail-closed and require explicit `ALLOW_SYNTHETIC_ACTIONS=true` opt-in for development-only runs.
+
+Legacy token-scoring routes are retired. The v3 Blob fallback excludes token details and scanner scores, is rejected after three hours, and uses a short cache lifetime.
 
 ## Architecture
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
 
-const WINDOWS = ["1h", "6h", "24h", "7d"];
+const WINDOWS = ["1h", "6h", "24h"];
 
 function compact(value: number | null | undefined) {
   if (value == null) return "Not observed";
@@ -49,20 +49,20 @@ export default function TransferActivityPage() {
           <p>Canonical-token movements indexed from Blockscout. No inferred DEX direction or fabricated USD flow.</p>
         </div>
         <div className="window-tabs">
-          {WINDOWS.map((item) => <button key={item} className={window === item ? "active" : ""} onClick={() => setWindow(item)}>{item}</button>)}
+          {WINDOWS.map((item) => <button key={item} className={window === item ? "active" : ""} aria-pressed={window === item} onClick={() => setWindow(item)}>{item}</button>)}
         </div>
       </header>
 
       <section className="metric-grid metric-grid-five">
-        <div className="metric-block"><p className="metric-label">TRANSFERS</p><p className="metric-value">{compact(data?.activity.transferEvents)}</p><p className="metric-note">Stored events / {window}</p></div>
-        <div className="metric-block"><p className="metric-label">ADDRESSES</p><p className="metric-value">{compact(data?.activity.activeAddresses)}</p><p className="metric-note">Unique participants</p></div>
+        <div className="metric-block"><p className="metric-label">TRANSFER EVENTS</p><p className="metric-value">{compact(data?.activity.transferEvents)}</p><p className="metric-note">Stored ERC-20 logs / {window}</p></div>
+        <div className="metric-block"><p className="metric-label">ADDRESSES</p><p className="metric-value">{compact(data?.activity.activeAddresses)}</p><p className="metric-note">Unique addresses, including contracts</p></div>
         <div className="metric-block"><p className="metric-label">TOKENS</p><p className="metric-value">{compact(data?.activity.activeTokens)}</p><p className="metric-note">Observed in window</p></div>
         <div className="metric-block"><p className="metric-label">MINT EVENTS</p><p className="metric-value">{compact(data?.activity.mintEvents)}</p><p className="metric-note">From zero address</p></div>
         <div className="metric-block"><p className="metric-label">BURN EVENTS</p><p className="metric-value">{compact(data?.activity.burnEvents)}</p><p className="metric-note">To zero address</p></div>
       </section>
 
       <section className="scope-banner compact-scope">
-        <div><span className="scope-label">SCOPE</span><strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Full initial registry coverage" : `${data?.coverage.cycleProgressPct ?? 0}% initial coverage`}</strong></div>
+        <div><span className="scope-label">SCOPE</span><strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Registry rotation completed" : `${data?.coverage.cycleProgressPct ?? 0}% initial rotation`}</strong></div>
         <div className="coverage-track"><span style={{ width: `${(data?.coverage.completedCycles ?? 0) > 0 ? 100 : data?.coverage.cycleProgressPct ?? 0}%` }} /></div>
         <p className="scope-note">Last indexed {relativeTime(data?.coverage.lastIndexedAt)}. {data?.dataQuality.note}</p>
       </section>
@@ -72,31 +72,10 @@ export default function TransferActivityPage() {
         <ActivityTimelineChart data={data?.timeline ?? []} />
       </section>
 
-      <section className="panel leaders-panel">
-        <div className="panel-heading"><div><p className="section-kicker">TOKEN COMPARISON</p><h2>Most active tracked assets</h2><p>Activity Index is relative within this result set: 60% transfer count, 40% unique addresses.</p></div></div>
-        <div className="transfer-table-wrap">
-          <table className="data-table">
-            <thead><tr><th>Asset</th><th>Activity index</th><th>Transfers</th><th>Addresses</th><th>vs prior window</th><th>Latest block</th></tr></thead>
-            <tbody>
-              {(data?.topTokens ?? []).map((token) => (
-                <tr key={token.address}>
-                  <td><strong>{token.symbol || "Unknown"}</strong><small className="table-sub">{token.name || shortAddress(token.address)}</small></td>
-                  <td><span className="score-cell"><i style={{ width: `${token.activityIndex}%` }} /> <b>{token.activityIndex}</b></span></td>
-                  <td>{token.transferCount.toLocaleString()}</td>
-                  <td>{token.activeAddresses.toLocaleString()}</td>
-                  <td>{token.momentumPct == null ? "Newly observed" : `${token.momentumPct > 0 ? "+" : ""}${token.momentumPct.toFixed(0)}%`}</td>
-                  <td><a href={`https://robinhoodchain.blockscout.com/block/${token.latestBlock}`} target="_blank" rel="noreferrer">{token.latestBlock.toLocaleString()} ↗</a></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!data?.topTokens?.length && <div className="empty-state">No activity observed in this window.</div>}
-        </div>
-      </section>
 
       <section className="panel recent-panel">
-        <div className="panel-heading"><div><p className="section-kicker">EVIDENCE LOG</p><h2>Recent transfers</h2></div></div>
-        <div className="transfer-table-wrap">
+        <div className="panel-heading"><div><p className="section-kicker">EVIDENCE LOG</p><h2>Recent transfer events</h2><p>Multiple events can belong to one transaction. Counts are not transaction, wallet-owner, or USD-flow counts.</p></div></div>
+        <div className="transfer-table-wrap" role="region" aria-label="Recent transfer events" tabIndex={0}>
           <table className="data-table">
             <thead><tr><th>Time</th><th>Token</th><th>Event</th><th>From</th><th>To</th><th>Amount</th><th>Transaction</th></tr></thead>
             <tbody>

@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { tryDatabase, uiOnlyResponse } from "@/lib/api-helpers";
+import {
+  invalidWindowResponse,
+  parseObservationWindow,
+  tryDatabase,
+  uiOnlyResponse,
+} from "@/lib/api-helpers";
 import { getStockTokensData } from "@/lib/queries";
 import { loadSnapshot, pickWindow } from "@/lib/snapshot";
 
 export async function GET(request: Request) {
   try {
+    const window = parseObservationWindow(request);
+    if (!window) return invalidWindowResponse();
     const { searchParams } = new URL(request.url);
-    const window = searchParams.get("window") || "24h";
     const canonicalOnly = searchParams.get("canonicalOnly") === "true";
 
     const database = await tryDatabase(() =>
@@ -29,7 +35,7 @@ export async function GET(request: Request) {
     const snap = await loadSnapshot();
     let rows = snap ? pickWindow(snap.stockTokens, window) : undefined;
     if (rows) {
-      if (canonicalOnly) rows = rows.filter((r) => r.canonicalStatus === "CANONICAL");
+      if (canonicalOnly) rows = rows.filter((row) => row.canonicalStatus === "CANONICAL");
       return NextResponse.json({
         data: rows,
         meta: {
@@ -45,9 +51,6 @@ export async function GET(request: Request) {
     return uiOnlyResponse("stock-tokens");
   } catch (error) {
     console.error("Failed to fetch stock tokens:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch stock tokens", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch stock tokens" }, { status: 500 });
   }
 }

@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { tryDatabase, uiOnlyResponse } from "@/lib/api-helpers";
+import {
+  invalidWindowResponse,
+  parseObservationWindow,
+  tryDatabase,
+  uiOnlyResponse,
+} from "@/lib/api-helpers";
 import { getOverviewData } from "@/lib/queries";
 import { loadSnapshot, pickWindow } from "@/lib/snapshot";
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const window = searchParams.get("window") || "24h";
+    const window = parseObservationWindow(request);
+    if (!window) return invalidWindowResponse();
 
     const database = await tryDatabase(() => getOverviewData(getDb(), window));
     if (database.ok) {
@@ -17,8 +22,9 @@ export async function GET(request: Request) {
           window,
           sources: ["blockscout-direct", "robinhood-assets"],
           lastUpdatedAt: database.data.lastUpdatedAt,
-          calculationVersion: "activity-v2",
-          methodology: "descriptive-observation",
+          calculationVersion: "observation-v3",
+          methodology: "page-bounded-descriptive-observation",
+          comparativeRanking: "withheld",
           servedFrom: "neon-postgres",
         },
       });
@@ -28,13 +34,14 @@ export async function GET(request: Request) {
     const data = snap ? pickWindow(snap.overview, window) : undefined;
     if (data && "activity" in data && "coverage" in data) {
       return NextResponse.json({
-        data,
+        data: { ...data, topTokens: [] },
         meta: {
           window,
           sources: ["blockscout-direct", "robinhood-assets"],
           lastUpdatedAt: snap?.builtAt ?? new Date().toISOString(),
-          calculationVersion: "activity-v2",
-          methodology: "descriptive-observation",
+          calculationVersion: "observation-v3",
+          methodology: "page-bounded-descriptive-observation",
+          comparativeRanking: "withheld",
           servedFrom: "snapshot",
           degraded: database.attempted,
         },
@@ -43,9 +50,6 @@ export async function GET(request: Request) {
     return uiOnlyResponse("overview");
   } catch (error) {
     console.error("Failed to fetch overview:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch overview", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch overview" }, { status: 500 });
   }
 }

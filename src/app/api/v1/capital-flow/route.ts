@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { tryDatabase, uiOnlyResponse } from "@/lib/api-helpers";
+import {
+  invalidWindowResponse,
+  parseObservationWindow,
+  tryDatabase,
+  uiOnlyResponse,
+} from "@/lib/api-helpers";
 import { getOverviewData } from "@/lib/queries";
 import { loadSnapshot, pickWindow } from "@/lib/snapshot";
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const window = searchParams.get("window") || "24h";
+    const window = parseObservationWindow(request);
+    if (!window) return invalidWindowResponse();
 
     const database = await tryDatabase(() => getOverviewData(getDb(), window));
     if (database.ok) {
@@ -17,7 +22,8 @@ export async function GET(request: Request) {
           window,
           lastUpdatedAt: database.data.lastUpdatedAt,
           sources: ["blockscout-direct"],
-          methodology: "descriptive-observation",
+          methodology: "page-bounded-descriptive-observation",
+          eventUnit: "erc20-transfer-log",
           servedFrom: "neon-postgres",
         },
       });
@@ -27,12 +33,13 @@ export async function GET(request: Request) {
     const data = snapshot ? pickWindow(snapshot.overview, window) : undefined;
     if (data && "activity" in data && "coverage" in data) {
       return NextResponse.json({
-        data,
+        data: { ...data, topTokens: [] },
         meta: {
           window,
           lastUpdatedAt: snapshot?.builtAt ?? new Date().toISOString(),
           sources: ["blockscout-direct"],
-          methodology: "descriptive-observation",
+          methodology: "page-bounded-descriptive-observation",
+          eventUnit: "erc20-transfer-log",
           servedFrom: "snapshot",
           degraded: database.attempted,
         },
@@ -41,9 +48,6 @@ export async function GET(request: Request) {
     return uiOnlyResponse("capital-flow");
   } catch (error) {
     console.error("Failed to fetch capital flow:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch capital flow" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch capital flow" }, { status: 500 });
   }
 }

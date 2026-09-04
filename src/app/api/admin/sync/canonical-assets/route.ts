@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Admin sync canonical-assets failed:", error);
     return NextResponse.json(
-      { error: "Sync failed", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Sync failed" },
       { status: 500 }
     );
   }

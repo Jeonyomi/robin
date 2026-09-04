@@ -8,13 +8,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
-import { tokens } from "@/db/schema";
 import {
   WINDOWS,
   getOverviewData,
   getStockTokensData,
-  getTokenDetailData,
-  getTokensScannerData,
   getSyncStatesData,
 } from "@/lib/queries";
 import type { OverviewData, StockTokenRow } from "@/lib/queries";
@@ -34,22 +31,12 @@ export async function buildSnapshot(): Promise<Snapshot> {
     stockTokens[w] = await getStockTokensData(db, w, false);
   }
 
-  const tokenList = await db.select().from(tokens);
-  const tokenDetails = {} as Snapshot["tokenDetails"];
-  for (const t of tokenList) {
-    const detail = await getTokenDetailData(db, t.address);
-    if (detail) tokenDetails[t.address] = detail;
-  }
-
-  const tokensScanner = await getTokensScannerData(db);
   const syncStates = await getSyncStatesData(db);
 
   return {
     builtAt: new Date().toISOString(),
     overview,
     stockTokens,
-    tokenDetails,
-    tokensScanner,
     syncStates,
   };
 }
@@ -74,11 +61,12 @@ export async function publishSnapshotToBlob(): Promise<{ url: string; sizeBytes:
   const snapshot = await buildSnapshot();
   const { sizeBytes } = writeSnapshot(snapshot);
 
-  const blob = await put("robin/snapshot.json", JSON.stringify(snapshot), {
+  const blob = await put("robin/public-snapshot-v3.json", JSON.stringify(snapshot), {
     access: "public",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
+    cacheControlMaxAge: 60,
   });
 
   return { url: blob.url, sizeBytes };

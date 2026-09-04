@@ -1,70 +1,63 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { tryDatabase } from "@/lib/api-helpers";
-import { getSyncStatesData } from "@/lib/queries";
+import { getSyncStatesData, type SyncStateRow } from "@/lib/queries";
 import { loadSnapshot } from "@/lib/snapshot";
 
-async function checkUrl(url: string): Promise<string> {
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-    return response.ok ? "healthy" : "degraded";
-  } catch {
-    return "unavailable";
-  }
+function storedStatus(state: SyncStateRow | undefined, maxAgeHours = 3) {
+  if (!state?.lastSuccessAt) return "unknown";
+  if (state.lastError) return "degraded";
+  const ageMs = Date.now() - Date.parse(state.lastSuccessAt);
+  return Number.isFinite(ageMs) && ageMs <= maxAgeHours * 60 * 60 * 1000
+    ? "healthy"
+    : "degraded";
 }
 
 export async function GET() {
   try {
-    // Sync states come from Neon when healthy, otherwise the last snapshot.
+    // Read persisted collector outcomes only. Public requests must not fan out
+    // into live upstream probes of Robinhood or Blockscout.
     const database = await tryDatabase(() => getSyncStatesData(getDb()));
     const snapshot = database.ok ? null : await loadSnapshot();
     const syncStates = database.ok ? database.data : snapshot?.syncStates ?? [];
 
-    const findState = (source: string, jobName?: string) =>
-      syncStates.find((s) => s.source === source && (!jobName || s.jobName === jobName));
-
-    const [robinhoodAssetsStatus, blockscoutStatus] = await Promise.all([
-      checkUrl("https://api.robinhood.com/rhj/assets"),
-      checkUrl("https://robinhoodchain.blockscout.com/api/v2/stats"),
-    ]);
+    const findState = (source: string, jobName: string) =>
+      syncStates.find((state) => state.source === source && state.jobName === jobName);
 
     const robinhoodState = findState("robinhood", "canonical-assets");
     const blockscoutStatsState = findState("blockscout", "chain-stats");
     const transferState = findState("blockscout", "token-transfers");
+    const robinhoodStatus = storedStatus(robinhoodState);
+    const statsStatus = storedStatus(blockscoutStatsState);
+    const transferStatus = storedStatus(transferState);
+    const databaseStatus = database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable";
 
     const sources = [
       {
         name: "Robinhood Assets API",
         url: "https://api.robinhood.com/rhj/assets",
-        status: robinhoodAssetsStatus,
+        status: robinhoodStatus,
         lastSuccessAt: robinhoodState?.lastSuccessAt || null,
         lastError: robinhoodState?.lastError || null,
       },
       {
         name: "Blockscout Chain Stats",
         url: "https://robinhoodchain.blockscout.com/api/v2/stats",
-        status: blockscoutStatsState?.lastError ? "degraded" : blockscoutStatus,
+        status: statsStatus,
         lastSuccessAt: blockscoutStatsState?.lastSuccessAt || null,
         lastError: blockscoutStatsState?.lastError || null,
       },
       {
         name: "Blockscout Token Transfers",
         url: "https://robinhoodchain.blockscout.com/api/v2/tokens/{address}/transfers",
-        status: transferState?.lastSuccessAt ? transferState.lastError ? "degraded" : "healthy" : "unknown",
+        status: transferStatus,
         lastSuccessAt: transferState?.lastSuccessAt || null,
         lastError: transferState?.lastError || null,
       },
       {
         name: "Database",
         url: database.ok ? "Neon Postgres" : "Snapshot (Vercel Blob)",
-        status: database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable",
+        status: databaseStatus,
         lastSuccessAt: syncStates[0]?.lastSuccessAt || null,
         lastError: null,
       },
@@ -74,22 +67,21 @@ export async function GET() {
       data: {
         sources,
         overallStatus:
-          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" && !blockscoutStatsState?.lastError &&
-          Boolean(transferState?.lastSuccessAt) && !transferState?.lastError && database.ok
+          robinhoodStatus === "healthy" && statsStatus === "healthy" &&
+          transferStatus === "healthy" && databaseStatus === "healthy"
             ? "healthy"
             : "degraded",
       },
       meta: {
-        checkedAt: new Date().toISOString(),
+        readAt: new Date().toISOString(),
+        liveProbes: false,
+        source: "persisted-collector-state",
         servedFrom: database.ok ? "neon-postgres" : "snapshot",
         degraded: !database.ok && database.attempted,
       },
     });
   } catch (error) {
-    console.error("Failed to check source health:", error);
-    return NextResponse.json(
-      { error: "Failed to check source health" },
-      { status: 500 }
-    );
+    console.error("Failed to read source health:", error);
+    return NextResponse.json({ error: "Failed to read source health" }, { status: 500 });
   }
 }

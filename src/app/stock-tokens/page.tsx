@@ -61,7 +61,7 @@ export default function AssetRegistryPage() {
 
       <section className="panel registry-panel">
         <div className="panel-heading"><div><p className="section-kicker">SOURCE-MATCHED ASSETS</p><h2>{visible.length} results</h2></div><span className="method-chip">{loading ? "Refreshing" : "Robinhood + Blockscout"}</span></div>
-        <div className="transfer-table-wrap">
+        <div className="transfer-table-wrap" role="region" aria-label="Asset registry results" tabIndex={0}>
           <table className="data-table">
             <thead><tr><th>Asset</th><th>Registry status</th><th>Holders</th><th>Holder change</th><th>Data coverage</th><th>Metadata observed</th><th>Contract</th></tr></thead>
             <tbody>

@@ -10,16 +10,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const results: Record<string, unknown> = {};
-
-    // Job 1: Sync canonical assets
-    try {
-      results.canonicalAssets = await syncCanonicalAssets();
-    } catch (error) {
-      results.canonicalAssets = {
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
+    // Fail the HTTP request when the job fails so the scheduler cannot record
+    // a false success.
+    const canonicalAssets = await syncCanonicalAssets();
 
     // Future jobs can be added here:
     // results.referencePrices = await syncReferencePrices();
@@ -27,7 +20,7 @@ export async function GET(request: Request) {
     // results.signals = await recalculateSignals();
 
     return NextResponse.json({
-      data: results,
+      data: { canonicalAssets },
       meta: {
         job: "daily-maintenance",
         completedAt: new Date().toISOString(),
@@ -36,7 +29,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Daily maintenance cron failed:", error);
     return NextResponse.json(
-      { error: "Cron job failed", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Cron job failed" },
       { status: 500 }
     );
   }
