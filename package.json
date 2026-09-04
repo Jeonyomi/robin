@@ -17,6 +17,8 @@
     "sync:metadata": "tsx scripts/sync.ts metadata",
     "sync:prices": "tsx scripts/sync.ts prices",
     "sync:metrics": "tsx scripts/sync.ts metrics",
+    "sync:actions": "tsx scripts/sync.ts actions",
+    "sync:signals": "tsx scripts/sync.ts signals",
     "sync:watch": "tsx scripts/sync.ts watch",
     "build:snapshot": "tsx scripts/build-snapshot.ts",
     "publish:snapshot": "tsx scripts/publish-snapshot.ts",

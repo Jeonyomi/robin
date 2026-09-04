@@ -15,6 +15,8 @@ import { syncCanonicalAssets } from "@/lib/jobs/sync-canonical-assets";
 import { syncTokenMetadata } from "@/lib/jobs/sync-token-metadata";
 import { syncReferencePrices } from "@/lib/jobs/sync-reference-prices";
 import { calculateTokenMetrics } from "@/lib/jobs/calculate-metrics";
+import { generateEconomicActions } from "@/lib/jobs/generate-economic-actions";
+import { generateSignals } from "@/lib/jobs/generate-signals";
 import { publishSnapshotToBlob, formatBytes } from "./lib/snapshot-builder";
 
 const job = process.argv[2] || "all";
@@ -37,6 +39,12 @@ async function run(jobName: string) {
       case "metrics":
         result = await calculateTokenMetrics();
         break;
+      case "actions":
+        result = await generateEconomicActions();
+        break;
+      case "signals":
+        result = await generateSignals();
+        break;
       default:
         throw new Error(`Unknown job: ${jobName}`);
     }
@@ -50,7 +58,7 @@ async function run(jobName: string) {
 
 async function main() {
   if (job === "all" || job === "watch") {
-    const jobs = ["canonical", "metadata", "prices", "metrics"];
+    const jobs = ["canonical", "metadata", "prices", "metrics", "actions", "signals"];
     for (const j of jobs) await run(j);
 
     // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
