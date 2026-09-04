@@ -74,6 +74,9 @@ export async function fetchTokenTransfers(
   }
 
   const response = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+  if (response.status === 404) {
+    return { items: [], nextCursor: null };
+  }
   if (!response.ok) {
     throw new Error(`Blockscout transfer API failed: ${response.status}`);
   }

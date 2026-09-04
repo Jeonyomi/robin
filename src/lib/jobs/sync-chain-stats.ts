@@ -1,7 +1,13 @@
-import { and, eq } from "drizzle-orm";
-import { sourceSyncState } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { sourceSyncState, tokenTransfers } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { fetchChainStats } from "@/lib/sources/blockscout/stats";
+
+function previousBlockHeight(value: unknown): number | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = Number((value as Record<string, unknown>).totalBlocks);
+  return Number.isFinite(candidate) ? candidate : null;
+}
 
 export async function syncChainStats() {
   const db = getDb();
@@ -19,7 +25,25 @@ export async function syncChainStats() {
   });
 
   try {
+    const [existingRows, transferRows] = await Promise.all([
+      db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(key).limit(1),
+      db.select({ block: sql<number>`max(${tokenTransfers.blockNumber})` }).from(tokenTransfers),
+    ]);
     const stats = await fetchChainStats();
+    const previousHeight = previousBlockHeight(existingRows[0]?.cursor);
+    const latestTransferBlock = Number(transferRows[0]?.block) || 0;
+    const minimumKnownHeight = Math.max(previousHeight ?? 0, latestTransferBlock);
+    if (stats.totalBlocks < minimumKnownHeight) {
+      const message = `Ignored regressing Blockscout stats response: ${stats.totalBlocks} < ${minimumKnownHeight}`;
+      await db.update(sourceSyncState).set({
+        lastErrorAt: new Date(),
+        lastError: message,
+        recordsProcessed: 0,
+        status: "degraded",
+      }).where(key);
+      return { ignored: true, reason: message };
+    }
+
     await db.update(sourceSyncState).set({
       cursor: stats,
       lastSuccessAt: new Date(),

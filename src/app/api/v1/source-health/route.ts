@@ -50,7 +50,7 @@ export async function GET() {
       {
         name: "Blockscout Chain Stats",
         url: "https://robinhoodchain.blockscout.com/api/v2/stats",
-        status: blockscoutStatus,
+        status: blockscoutStatsState?.lastError ? "degraded" : blockscoutStatus,
         lastSuccessAt: blockscoutStatsState?.lastSuccessAt || null,
         lastError: blockscoutStatsState?.lastError || null,
       },
@@ -74,7 +74,7 @@ export async function GET() {
       data: {
         sources,
         overallStatus:
-          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" &&
+          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" && !blockscoutStatsState?.lastError &&
           Boolean(transferState?.lastSuccessAt) && !transferState?.lastError && database.ok
             ? "healthy"
             : "degraded",
