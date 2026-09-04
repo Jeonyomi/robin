@@ -40,7 +40,7 @@ Set these in Vercel Project Settings → Environment Variables:
 - `CRON_SECRET`: authenticates `/api/cron/daily-maintenance`
 - `ADMIN_SYNC_SECRET`: authenticates `/api/admin/sync/*`
 - `BLOB_READ_WRITE_TOKEN`: optional; enables snapshot publishing
-- `SNAPSHOT_URL`: optional override for the built-in Blob fallback URL
+- `SNAPSHOT_URL_V3`: optional override for the built-in v3 Blob fallback URL
 
 Generate each secret independently:
 

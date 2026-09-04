@@ -3,7 +3,7 @@
  *   pnpm publish:snapshot
  *
  * Requires BLOB_READ_WRITE_TOKEN in .env (Vercel dashboard → Storage → Blob).
- * Prints the public URL — set it as SNAPSHOT_URL on Vercel (and optionally in
+ * Prints the public URL — set it as SNAPSHOT_URL_V3 on Vercel (and optionally in
  * .env for local parity with the deployed UI).
  */
 import "dotenv/config";
@@ -19,7 +19,7 @@ async function main() {
   console.log("  Public URL:");
   console.log(`  ${url}`);
   console.log("");
-  console.log("  Next step: set this URL as SNAPSHOT_URL in your Vercel project");
+  console.log("  Next step: set this URL as SNAPSHOT_URL_V3 in your Vercel project");
   console.log("  (Settings → Environment Variables → Production) and redeploy.");
 }
 
