@@ -112,11 +112,11 @@ pnpm db:check
 
 ## 7. Update the scheduled sync
 
-The existing `RobinSync` task can continue running `pnpm sync`; only its working
-copy needs the new `.env` containing `DATABASE_URL`. It now writes directly to
-Neon. Keep one scheduler active to avoid overlapping runs. Synthetic economic
-actions are skipped by default; never set `ALLOW_SYNTHETIC_ACTIONS=true` in the
-production scheduler.
+The existing `RobinSync` task runs every 10 minutes; only its working copy needs
+the `.env` containing `DATABASE_URL`. It writes directly to Neon. Keep the
+`IgnoreNew` multiple-instance policy so a slow run cannot overlap the next
+trigger. Synthetic economic actions are skipped by default; never set
+`ALLOW_SYNTHETIC_ACTIONS=true` in the production scheduler.
 
 The operating sequence is `canonical → stats → metadata → prices → transfers → metrics`.
 Transfer collection is intentionally bounded. Tune `TRANSFER_SYNC_BATCH_SIZE`,

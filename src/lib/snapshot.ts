@@ -23,7 +23,7 @@ export interface Snapshot {
   syncStates: SyncStateRow[];
 }
 
-/** Public Blob store URL the hourly local sync overwrites. */
+/** Public Blob store URL the scheduled local sync overwrites. */
 const DEFAULT_SNAPSHOT_URL =
   "https://n6bn9jsnnus9uoav.public.blob.vercel-storage.com/robin/public-snapshot-v3.json";
 

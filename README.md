@@ -64,7 +64,7 @@ Cross-token ranking and momentum are fail-closed. They remain withheld until the
 
 ## Collection design
 
-The hourly sync uses a bounded rotating collector:
+The 10-minute sync uses a bounded rotating collector:
 
 - 24 canonical tokens per run by default
 - Up to 6 recently active tokens added for more frequent observation
@@ -74,7 +74,7 @@ The hourly sync uses a bounded rotating collector:
 - Concurrency limited to 4 workers
 - Deduplication by transaction hash + log index + token address
 
-At default settings, the 194-token registry receives an initial full rotation over approximately nine hourly runs. Page limits mean transfer totals can be lower bounds for very active tokens. The UI states this explicitly.
+At default settings, the 194-token registry receives an initial full rotation over approximately nine successful runs, about 90 minutes when every run completes within its interval. Page limits mean transfer totals can be lower bounds for very active tokens. The UI states this explicitly.
 
 The public observation windows are `1h`, `6h`, and `24h`. Longer comparative windows remain disabled until sufficient equivalent history is available.
 
@@ -123,7 +123,7 @@ Robinhood APIs     Blockscout direct API
 - Neon Postgres / Drizzle ORM
 - Vercel deployment
 - Optional Vercel Blob read fallback
-- Windows Task Scheduler for hourly collection
+- Windows Task Scheduler for 10-minute collection with overlapping runs blocked
 
 ## Local setup
 

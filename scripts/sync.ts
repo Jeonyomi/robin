@@ -95,7 +95,7 @@ async function main() {
     }
 
     // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
-    // Only in "all" mode (hourly) — watch mode re-runs every 5 min and would
+    // Only in "all" mode (scheduled) — watch mode re-runs every 5 min and would
     // burn Blob upload bandwidth. Skipped when BLOB_READ_WRITE_TOKEN is unset.
     if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN && allSucceeded) {
       console.log("\n▶ publishing snapshot to Vercel Blob");

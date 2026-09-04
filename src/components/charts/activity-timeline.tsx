@@ -4,6 +4,14 @@ import dynamic from "next/dynamic";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
+const chartDateTime = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 export type ActivityTimelinePoint = {
   timestamp: string;
   transfers: number;
@@ -43,7 +51,7 @@ export function ActivityTimelineChart({ data }: { data: ActivityTimelinePoint[] 
     xAxis: {
       type: "category",
       boundaryGap: true,
-      data: data.map((point) => new Date(point.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" })),
+      data: data.map((point) => chartDateTime.format(new Date(point.timestamp))),
       axisLabel: { color: "#88918b", fontSize: 10, hideOverlap: true },
       axisLine: { lineStyle: { color: "#dfe5e1" } },
       axisTick: { show: false },
