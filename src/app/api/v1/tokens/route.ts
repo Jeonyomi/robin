@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
+import { tryDatabase, uiOnlyResponse } from "@/lib/api-helpers";
 import { getTokensScannerData, sortScannerItems } from "@/lib/queries";
 import { loadSnapshot } from "@/lib/snapshot";
 
@@ -9,31 +9,33 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const sort = searchParams.get("sort") || "holders";
 
-    if (!dataAvailable()) {
-      const snap = await loadSnapshot();
-      if (snap) {
-        return NextResponse.json({
-          data: sortScannerItems(snap.tokensScanner, sort),
-          meta: {
-            sort,
-            lastUpdatedAt: snap.builtAt || new Date().toISOString(),
-            sources: ["blockscout", "robinhood"],
-            servedFrom: "snapshot",
-          },
-        });
-      }
-      return uiOnlyResponse("tokens");
+    const database = await tryDatabase(() => getTokensScannerData(getDb()));
+    if (database.ok) {
+      return NextResponse.json({
+        data: sortScannerItems(database.data, sort),
+        meta: {
+          sort,
+          lastUpdatedAt: new Date().toISOString(),
+          sources: ["blockscout", "robinhood"],
+          servedFrom: "neon-postgres",
+        },
+      });
     }
 
-    const list = await getTokensScannerData(getDb());
-    return NextResponse.json({
-      data: sortScannerItems(list, sort),
-      meta: {
-        sort,
-        lastUpdatedAt: new Date().toISOString(),
-        sources: ["blockscout", "robinhood"],
-      },
-    });
+    const snap = await loadSnapshot();
+    if (snap) {
+      return NextResponse.json({
+        data: sortScannerItems(snap.tokensScanner, sort),
+        meta: {
+          sort,
+          lastUpdatedAt: snap.builtAt,
+          sources: ["blockscout", "robinhood"],
+          servedFrom: "snapshot",
+          degraded: database.attempted,
+        },
+      });
+    }
+    return uiOnlyResponse("tokens");
   } catch (error) {
     console.error("Failed to fetch tokens:", error);
     return NextResponse.json(

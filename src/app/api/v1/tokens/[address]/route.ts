@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dataAvailable, uiOnlyResponse } from "@/lib/api-helpers";
+import { tryDatabase, uiOnlyResponse } from "@/lib/api-helpers";
 import { getTokenDetailData } from "@/lib/queries";
 import { loadSnapshot } from "@/lib/snapshot";
 
@@ -12,36 +12,38 @@ export async function GET(
     const { address } = await params;
     const normalizedAddress = address.toLowerCase();
 
-    if (!dataAvailable()) {
-      const snap = await loadSnapshot();
-      const data = snap?.tokenDetails?.[normalizedAddress] || null;
-      if (data) {
-        return NextResponse.json({
-          data,
-          meta: {
-            lastUpdatedAt: snap?.builtAt || new Date().toISOString(),
-            servedFrom: "snapshot",
-          },
-        });
-      }
-      // Token genuinely unknown (either no snapshot or not synced)
-      if (snap) {
+    const database = await tryDatabase(() =>
+      getTokenDetailData(getDb(), normalizedAddress),
+    );
+    if (database.ok) {
+      if (!database.data) {
         return NextResponse.json({ error: "Token not found", data: null }, { status: 404 });
       }
-      return uiOnlyResponse("tokens/[address]");
+      return NextResponse.json({
+        data: database.data,
+        meta: {
+          lastUpdatedAt: new Date().toISOString(),
+          servedFrom: "neon-postgres",
+        },
+      });
     }
 
-    const data = await getTokenDetailData(getDb(), normalizedAddress);
-    if (!data) {
+    const snap = await loadSnapshot();
+    const data = snap?.tokenDetails?.[normalizedAddress] || null;
+    if (data) {
+      return NextResponse.json({
+        data,
+        meta: {
+          lastUpdatedAt: snap?.builtAt || new Date().toISOString(),
+          servedFrom: "snapshot",
+          degraded: database.attempted,
+        },
+      });
+    }
+    if (snap) {
       return NextResponse.json({ error: "Token not found", data: null }, { status: 404 });
     }
-
-    return NextResponse.json({
-      data,
-      meta: {
-        lastUpdatedAt: new Date().toISOString(),
-      },
-    });
+    return uiOnlyResponse("tokens/[address]");
   } catch (error) {
     console.error("Failed to fetch token detail:", error);
     return NextResponse.json(

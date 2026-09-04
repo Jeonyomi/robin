@@ -37,9 +37,9 @@ Frontend (Next.js 16) → API Routes → Domain Logic → Neon Postgres
 - **Frontend**: Next.js App Router, React 19, Tailwind CSS, ECharts
 - **API**: Next.js Route Handlers (BFF pattern)
 - **Domain**: Canonical identity resolver, risk engine, opportunity scorer, signal generator
-- **Storage**: Local SQLite (`data/robin.db`) with Drizzle ORM (10 tables)
+- **Storage**: Neon Postgres via Vercel Marketplace with Drizzle ORM (10 tables)
 - **Sources**: Robinhood Assets API, Robinhood Price API, Blockscout REST API
-- **Deploy**: Local-first — full data + dashboard on your machine; Vercel serves UI only
+- **Deploy**: Vercel API/UI backed by Neon; optional Vercel Blob read fallback
 
 ## 📊 Core Features
 
@@ -56,7 +56,7 @@ Frontend (Next.js 16) → API Routes → Domain Logic → Neon Postgres
 
 ## 🚀 Quick Start
 
-### Local Development (data + full dashboard)
+### Local Development
 
 ```bash
 # Clone
@@ -66,24 +66,31 @@ cd robin
 # Install
 pnpm install
 
-# Setup environment (defaults work — SQLite local file)
-cp .env.example .env
+# Pull Neon/Vercel environment variables, or copy the template and fill them in
+vercel env pull .env
+# cp .env.example .env
 
-# Create the database
-pnpm db:push
+# Create/update the Neon Postgres schema
+pnpm db:migrate
 
-# Sync real on-chain data (Robinhood + Blockscout)
+# One-time import of the existing local SQLite database (optional)
+pnpm db:import-sqlite -- data/robin.db
+
+# Sync current data into Neon Postgres
 pnpm sync
 
-# Run dev server — full dashboard with live data
+# Run the dashboard
 pnpm dev
 ```
 
 ### Environment Variables
 
 ```bash
-# Local SQLite database (default — no setup needed)
-DATABASE_URL="data/robin.db"
+# Pooled Neon URL for the application and sync jobs
+DATABASE_URL="postgresql://...-pooler.../robin?sslmode=require"
+
+# Direct Neon URL preferred by Drizzle migrations
+DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 
 # Pre-configured (defaults work)
 NEXT_PUBLIC_CHAIN_ID="4663"
@@ -93,25 +100,25 @@ ROBINHOOD_ASSETS_API_URL="https://api.robinhood.com/rhj/assets"
 BLOCKSCOUT_API_BASE_URL="https://robinhoodchain.blockscout.com/api/v2"
 ```
 
-> Vercel deployment shows your synced data via a JSON snapshot published to
-> Vercel Blob. Data is still stored and synced locally — see below.
+> Vercel and local sync jobs use the same Neon Postgres database. A JSON
+> snapshot in Vercel Blob is retained only as a read fallback.
 
-### Publish data to the deployed UI (optional)
+### Publish a fallback snapshot (optional)
 
 ```bash
 # One-time: Vercel dashboard → Storage → Create Blob store → copy token to .env
 #   BLOB_READ_WRITE_TOKEN="..."
 
-# Uploads data/snapshot.json and prints a public URL
+# Uploads a read-only fallback snapshot and prints its public URL
 pnpm publish:snapshot
 
 # 1) Optional: set that URL as SNAPSHOT_URL to override the default below.
-# 2) `pnpm sync` now auto-publishes a fresh snapshot on every run.
+# 2) `pnpm sync` auto-publishes a fresh snapshot when the Blob token is set.
 ```
 
-The public Blob URL is baked into the deployed code as a fallback, so the
-site serves your data right after deploy — no Vercel env var needed. Set
-`SNAPSHOT_URL` only if you migrate to a different Blob store.
+The public Blob URL is baked into the deployed code as a fallback. Normal API
+reads use Neon whenever `DATABASE_URL` is configured. Set `SNAPSHOT_URL` only
+if the Blob store changes.
 
 ### Generate Secrets
 
@@ -135,7 +142,7 @@ robin/
 │   │   ├── api/v1/             # REST API endpoints
 │   │   ├── api/admin/sync/     # Admin sync jobs
 │   │   └── api/cron/           # Scheduled maintenance
-│   ├── db/schema/              # Drizzle ORM schema (10 tables)
+│   ├── db/schema/              # Postgres Drizzle ORM schema (10 tables)
 │   ├── lib/
 │   │   ├── config/             # Env validation, constants
 │   │   ├── db/                 # Lazy DB connection
@@ -149,13 +156,19 @@ robin/
 │   ├── signals.md
 │   └── deployment.md
 ├── vercel.json                 # Vercel config (daily cron)
-├── drizzle.config.ts           # Drizzle Kit config
+├── drizzle.config.ts           # Neon Postgres migration config
 └── .env.example                # Environment template
 ```
 
 ## 🔄 Data Sync Strategy
 
-### Daily Maintenance (Cron)
+### Full Sync (Windows Task Scheduler or manual)
+
+Runs the six jobs sequentially and writes directly to Neon Postgres:
+canonical → metadata → prices → metrics → actions → signals. When
+`BLOB_READ_WRITE_TOKEN` is configured, it also refreshes the fallback snapshot.
+
+### Daily Maintenance (Vercel Cron)
 Runs at 03:17 UTC via Vercel Cron:
 1. Sync Robinhood canonical asset registry
 2. Check source health (Robinhood API, Blockscout)
@@ -189,7 +202,7 @@ curl -X POST "https://your-app.vercel.app/api/admin/sync/canonical-assets" \
 ## ⚠️ Known Limitations
 
 - **Hobby plan**: 1 cron job/day, 60s function timeout
-- **No realtime**: Data is snapshot-based, not streaming
+- **No realtime**: Data is scheduled/batch-based, not streaming
 - **No auth**: Watchlist is localStorage-based (P0)
 - **Partial protocol decoding**: Only SWAP, BRIDGE, MINT/BURN in P0
 - **No backtest**: Signal validation framework planned for P1

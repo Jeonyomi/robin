@@ -1,167 +1,144 @@
-# Deployment Guide — LOCAL-FIRST
+# Deployment Guide — Vercel + Neon Postgres
 
-## Architecture Overview
+## Target architecture
 
-This project uses a **local-first data architecture**:
-
-```
-┌─────────────────────────── LOCAL MACHINE ───────────────────────────┐
-│  pnpm dev                ← Next.js app + API routes                 │
-│  pnpm sync               ← data sync jobs (Robinhood + Blockscout)  │
-│  data/robin.db           ← SQLite database (all on-chain data)      │
-└─────────────────────────────────────────────────────────────────────┘
-            │
-            │ (UI only)
-            ▼
-┌─────────────────────────── VERCEL (UI-only) ────────────────────────┐
-│  Static/dynamic pages render with empty states                      │
-│  API routes return uiOnly responses (no data)                       │
-└─────────────────────────────────────────────────────────────────────┘
+```text
+RobinSync (Windows Task Scheduler or manual pnpm sync)
+        │
+        ▼
+Neon Postgres  ◀──── Next.js API routes on Vercel
+        │
+        └──── optional JSON snapshot → Vercel Blob fallback
 ```
 
-**Key principle**: All data accumulation and usage happens on your machine.
-Vercel deployment serves the UI only — pages render, but data is synced and
-served locally.
+Neon Postgres is the shared source of truth. Local sync jobs and deployed API
+routes use the same database. The Blob snapshot remains a read-only fallback
+when `DATABASE_URL` is unavailable.
 
----
+## 1. Connect Neon through Vercel Marketplace
 
-## Local Setup (data + full dashboard)
+1. Open the Vercel project for this repository.
+2. Go to **Storage** or **Integrations / Marketplace** and add **Neon**.
+3. Create a Neon project/database or attach an existing one.
+4. Connect it to Production, Preview, and Development as appropriate.
+5. Confirm that Vercel injected `DATABASE_URL` into the selected environments.
+6. Add `DATABASE_URL_UNPOOLED` with Neon's direct connection string if the
+   integration did not add it. Drizzle migrations should prefer this direct URL.
 
-### 1. Install & configure
+Use the pooled Neon URL (`-pooler` in the hostname) as `DATABASE_URL` for the
+Next.js serverless app and recurring sync jobs. Never commit either URL.
+
+Official references:
+
+- Vercel Postgres integrations: <https://vercel.com/docs/postgres>
+- Neon + Drizzle: <https://neon.com/docs/guides/drizzle>
+
+## 2. Configure protected operations
+
+Set these in Vercel Project Settings → Environment Variables:
+
+- `CRON_SECRET`: authenticates `/api/cron/daily-maintenance`
+- `ADMIN_SYNC_SECRET`: authenticates `/api/admin/sync/*`
+- `BLOB_READ_WRITE_TOKEN`: optional; enables snapshot publishing
+- `SNAPSHOT_URL`: optional override for the built-in Blob fallback URL
+
+Generate each secret independently:
 
 ```bash
-git clone https://github.com/Jeonyomi/robin.git
-cd robin
-pnpm install
-
-# Environment — the defaults work out of the box
-cp .env.example .env
-# DATABASE_URL=data/robin.db  (SQLite local file)
+openssl rand -hex 32
 ```
 
-### 2. Create the database
+## 3. Pull environment variables for local sync
+
+The sync scripts use `dotenv/config`, so place the variables in an ignored
+`.env` file. With Vercel CLI:
 
 ```bash
-pnpm db:push          # drizzle-kit push → creates tables in data/robin.db
+vercel link
+vercel env pull .env
 ```
 
-### 3. Sync data (Robinhood + Blockscout)
+Alternatively, copy `.env.example` to `.env` and fill in the Neon URLs and
+secrets manually.
+
+## 4. Create the Postgres schema
+
+Generate and apply versioned migrations:
 
 ```bash
-pnpm sync             # all jobs
-pnpm sync canonical   # Robinhood /rhj/assets registry (~194 stock tokens)
-pnpm sync metadata    # Blockscout token metadata (holders, volume, supply)
-pnpm sync prices      # Robinhood reference prices (batch endpoint)
-pnpm sync metrics     # holder deltas between snapshots
-pnpm sync watch       # run all jobs every 5 minutes (leave running)
+pnpm db:generate
+pnpm db:migrate
 ```
 
-Each sync is **idempotent** (upserts, no duplicates) and bounded
-(50 tokens per metadata batch — safe for rate limits).
+The committed Postgres migrations live in `src/db/migrations-postgres/`.
+`pnpm db:push` is retained for disposable development databases, but production
+changes should use `db:generate` + `db:migrate`.
 
-### 4. Run the dashboard
+## 5. Import the existing SQLite data once
+
+Pause the existing `RobinSync` scheduled task so the source stops changing,
+keep the legacy SQLite file backed up, then run:
 
 ```bash
-pnpm dev
-# → http://localhost:3000
+pnpm db:import-sqlite -- data/robin.db
 ```
 
----
+The importer:
 
-## Vercel Deployment (UI only)
+- copies all 10 application tables in bounded batches;
+- reads all SQLite tables from one consistent transaction snapshot;
+- preserves primary IDs and timestamps;
+- skips existing primary/unique-key conflicts so interrupted runs can resume;
+- resets Postgres serial sequences after importing explicit IDs;
+- compares source and target row counts and exits non-zero on a short copy;
+- never prints a database connection string.
 
-### 1. Connect repository
+Do not delete the SQLite backup until the target counts and deployed API have
+been verified.
 
-1. [vercel.com](https://vercel.com) → New Project
-2. Import `Jeonyomi/robin`
-3. Framework: **Next.js** (auto-detected)
-4. Build command: `pnpm build`
-
-### 2. Environment variables
-
-No runtime variables are strictly required. The public Vercel Blob URL that
-`pnpm publish:snapshot` uploads to is baked into the code (`DEFAULT_SNAPSHOT_URL`
-in `src/lib/snapshot.ts`), so the deployment serves your synced data out of
-the box. Override it only if the Blob store ever changes.
-
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `NEXT_PUBLIC_CHAIN_ID` | `4663` | |
-| `NEXT_PUBLIC_EXPLORER_URL` | Blockscout | |
-| `SNAPSHOT_URL` | baked-in Blob URL | Optional override; not needed in practice |
-
-`DATABASE_URL`, `CRON_SECRET`, `ADMIN_SYNC_SECRET` are NOT needed.
-
-### 3. Publish local data (one-time setup)
-
-Data accumulates on your machine; the deployment reads a **JSON snapshot**
-published to Vercel Blob after each sync. To enable:
-
-1. Vercel dashboard → **Storage** → **Create Blob store** → copy the
-   `BLOB_READ_WRITE_TOKEN`.
-2. Add it to your local `.env` (`BLOB_READ_WRITE_TOKEN=...`).
-3. Run `pnpm sync` (or `pnpm publish:snapshot`) — it uploads
-   `data/snapshot.json` and prints a **public URL**.
-4. Done — no Vercel env var needed. The published URL is baked into the
-   deployed code as the default snapshot source.
-
-From then on, every `pnpm sync` run auto-publishes a fresh snapshot
-(hourly via the `RobinSync` scheduled task, if configured).
-
-### 4. What works on Vercel
-
-- All 10 pages render with real synced data (served from the Blob snapshot)
-- Navigation, layout, watchlist (localStorage), styling
-- API routes fall back: local DB → Blob snapshot → `uiOnly` empty response
-  (`meta.servedFrom` says which source answered)
-- Live endpoints: `/api/v1/overview`, `/stock-tokens`, `/tokens`,
-  `/tokens/[address]`, `/source-health`
-
-### 5. What requires the local machine
-
-- Data sync jobs (`pnpm sync`) and Blob publishing
-- On-demand refresh / admin sync endpoints (local only)
-
----
-
-## Migrations
+## 6. Verify the Cloud DB
 
 ```bash
-pnpm db:generate   # generate SQL migration from schema changes
-pnpm db:push       # apply to local SQLite
+pnpm db:check
 ```
 
-Migration files live in `src/db/migrations/` and are committed.
+Expected output includes `"ok": true`, `"provider": "neon-postgres"`, table
+counts, and the latest sync state. Then exercise one write cycle:
 
----
+```bash
+pnpm sync:canonical
+pnpm db:check
+```
 
-## Local sync jobs (reference)
+## 7. Update the scheduled sync
 
-| Job | Source | What it stores | Frequency |
-|-----|--------|----------------|-----------|
-| `canonical` | Robinhood `/rhj/assets` | 194 canonical stock tokens | daily |
-| `metadata` | Blockscout `/tokens/{addr}` | holders, volume, supply, verification | daily |
-| `prices` | Robinhood `/rhj/prices` (batch) | bid/ask/mid × multiplier snapshots | hourly |
-| `metrics` | internal | holder deltas between snapshots | after metadata |
-| `watch` | all above | runs every 5 min | while running |
+The existing `RobinSync` task can continue running `pnpm sync`; only its working
+copy needs the new `.env` containing `DATABASE_URL`. It now writes directly to
+Neon. Keep one scheduler active to avoid overlapping runs.
 
----
+## 8. Deploy and verify
 
-## Troubleshooting
+After committing and pushing the migration:
 
-### "UI-only deployment" message on pages
-Vercel before the first `pnpm sync` publish. Run `pnpm sync` locally (it
-auto-publishes), or run `pnpm dev` locally.
+1. Redeploy the Vercel project.
+2. Confirm `/api/v1/source-health` reports `Neon Postgres` and
+   `meta.servedFrom: "neon-postgres"`.
+3. Confirm `/api/v1/overview?window=24h` returns current data.
+4. Compare token/signal/action counts with `pnpm db:check`.
+5. Confirm `lastUpdatedAt` advances after a scheduled sync.
+6. Run `PLAYWRIGHT_BASE_URL=<preview-or-production-url> pnpm e2e`. For a
+   Vercel-protected Preview, also set the local-only
+   `VERCEL_AUTOMATION_BYPASS_SECRET`; Playwright sends the official bypass
+   headers when this variable is present.
+7. Temporarily test a Preview deployment without `DATABASE_URL` and confirm it
+   falls back to the Blob snapshot instead of returning a 500.
 
-### API returns empty even locally
-- Check `data/robin.db` exists: `pnpm db:push`
-- Run `pnpm sync` once to populate
-- Restart `pnpm dev` (it caches the DB connection)
+## Rollback
 
-### 429 rate limits on Robinhood API
-The price adapter uses the **batch endpoint** (1 request for all assets).
-Metadata sync is bounded to 50 tokens per run — wait 5+ min between runs.
+1. Keep the original SQLite DB and last good Blob snapshot unchanged.
+2. Remove or disconnect `DATABASE_URL` from the affected Vercel environment.
+3. Redeploy; read APIs fall back to the published Blob snapshot.
+4. Restore the prior application revision if required.
 
-### better-sqlite3 native build on Windows
-pnpm handles prebuilt binaries. If build scripts are blocked, run
-`pnpm approve-builds` and allow `better-sqlite3`.
+This rollback is read-only: sync jobs must be stopped or pointed back to a safe
+working copy before making any further writes.

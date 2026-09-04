@@ -38,7 +38,7 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │                      Storage Layer                                  │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │ Neon Postgres (Drizzle ORM)                                   │  │
+│  │ Neon Postgres via Vercel Marketplace (Drizzle ORM + HTTP)      │  │
 │  │ • canonical_assets    • token_transfers                       │  │
 │  │ • tokens              • economic_actions                      │  │
 │  │ • token_metric_snapshots • stock_token_price_snapshots        │  │
@@ -77,11 +77,13 @@ DB Snapshots → Feature Engine → Opportunity/Risk Scores → Signals → API
 ### 3. User Interaction Flow
 
 ```
-User → Dashboard Page → API Route → DB Query → Response → UI Render
+User → Dashboard Page → API Route → Neon Query → Response → UI Render
 ```
 
 - Pages are client components that fetch from API routes
-- API routes query DB (not external APIs) for fast response
+- API routes query shared Neon Postgres (not external APIs) for consistent data
+- Local/automated sync jobs write to the same Neon database
+- Vercel Blob is a read-only fallback, not the primary database
 - Stale data shows "Last Updated" timestamp
 - Refresh button triggers scoped server-side re-fetch
 
@@ -91,12 +93,12 @@ User → Dashboard Page → API Route → DB Query → Response → UI Render
 
 Stock Tokens are identified by **exact contract address match** against Robinhood's official registry, never by symbol or name. This prevents ticker collision attacks.
 
-### P-02: DB-First Reads
+### P-02: Cloud DB-First Reads
 
-All dashboard pages read from DB snapshots, never directly from external APIs. This ensures:
-- Fast page loads (DB query < 100ms)
+All dashboard pages read from Neon, never directly from external APIs. This ensures:
+- One source of truth across local sync jobs and Vercel
 - Consistent data across users
-- Graceful degradation when external APIs are down
+- Graceful read degradation through the last published Blob snapshot
 
 ### P-03: Bounded Refresh
 

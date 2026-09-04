@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Local data sync CLI — runs on this machine, writes to local SQLite.
+ * Data sync CLI — runs locally or in automation and writes to Neon Postgres.
  *
  * Usage:
  *   pnpm sync            # all jobs

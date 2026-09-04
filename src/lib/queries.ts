@@ -1,9 +1,9 @@
 /**
- * Shared read queries — single source of truth for how the local SQLite DB is
+ * Shared read queries — single source of truth for how Neon Postgres is
  * turned into API payloads. Used by:
- *  1. API route handlers (when the local DB exists)
+ *  1. API route handlers (when Neon is configured)
  *  2. scripts/build-snapshot.ts (to bake the same payloads into data/snapshot.json)
- *     so the Vercel deployment can serve the same shapes from Blob.
+ *     so deployments can serve the same shapes from Blob as a fallback.
  */
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
@@ -82,8 +82,11 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
     .from(economicActions)
     .where(and(gte(economicActions.timestamp, windowStart), eq(economicActions.actionType, "SWAP")));
 
-  // SQLite: bucket unix-ms timestamps into ISO hours
-  const hourExpr = sql<string>`strftime('%Y-%m-%dT%H:00:00.000Z', timestamp / 1000, 'unixepoch')`;
+  // Postgres: bucket timestamptz values into UTC hours and return stable ISO text.
+  const hourExpr = sql<string>`to_char(
+    date_trunc('hour', ${economicActions.timestamp} AT TIME ZONE 'UTC'),
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  )`;
   const timelineRows = await db
     .select({
       hour: hourExpr,
@@ -98,7 +101,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
     .orderBy(hourExpr);
 
   const timeline = timelineRows.map((r) => ({
-    timestamp: r.hour,
+    timestamp: toIso(r.hour) ?? new Date(0).toISOString(),
     bridgeIn: Number(r.bridgeIn) || 0,
     bridgeOut: Number(r.bridgeOut) || 0,
     dexBuy: Number(r.dexBuy) || 0,
@@ -174,65 +177,65 @@ export async function getStockTokensData(
   window: string,
   canonicalOnly: boolean
 ): Promise<StockTokenRow[]> {
-  const canonical = await db.select().from(canonicalAssets);
-
   const tokenQuery = canonicalOnly
     ? db.select().from(tokens).where(eq(tokens.canonicalStatus, "CANONICAL"))
     : db.select().from(tokens);
 
-  const tokenList = await tokenQuery;
+  const [canonical, tokenList, metricRows] = await Promise.all([
+    db.select().from(canonicalAssets),
+    tokenQuery,
+    db
+      .select()
+      .from(tokenMetricSnapshots)
+      .where(eq(tokenMetricSnapshots.window, window))
+      .orderBy(desc(tokenMetricSnapshots.calculatedAt)),
+  ]);
 
-  return Promise.all(
-    tokenList.map(async (token) => {
-      const metrics = await db
-        .select()
-        .from(tokenMetricSnapshots)
-        .where(
-          and(
-            eq(tokenMetricSnapshots.tokenAddress, token.address),
-            eq(tokenMetricSnapshots.window, window)
-          )
-        )
-        .orderBy(desc(tokenMetricSnapshots.calculatedAt))
-        .limit(1);
-
-      const latestMetric = metrics[0] || null;
-      const canonicalAsset = canonical.find(
-        (a) => a.contractAddress.toLowerCase() === token.address.toLowerCase()
-      );
-
-      return {
-        address: token.address,
-        symbol: token.symbol,
-        name: token.name,
-        decimals: token.decimals,
-        canonicalStatus: token.canonicalStatus,
-        canonicalAsset: canonicalAsset
-          ? {
-              id: canonicalAsset.id,
-              symbol: canonicalAsset.symbol,
-              multiplier: canonicalAsset.currentMultiplier,
-              status: canonicalAsset.assetStatus,
-            }
-          : null,
-        metrics: latestMetric
-          ? {
-              holderCount: latestMetric.holderCount,
-              holderDelta: latestMetric.holderDelta,
-              uniqueBuyers: latestMetric.uniqueBuyers,
-              uniqueSellers: latestMetric.uniqueSellers,
-              netFlowUsd: latestMetric.netFlowUsd,
-              liquidityUsd: latestMetric.liquidityUsd,
-              depth1pctUsd: latestMetric.depth1pctUsd,
-              volumeUsd: latestMetric.volumeUsd,
-              top10Share: latestMetric.top10Share,
-              dataCompleteness: latestMetric.dataCompleteness,
-            }
-          : null,
-        lastSeenAt: toIso(token.lastSeenAt),
-      };
-    })
+  const canonicalByAddress = new Map(
+    canonical.map((asset) => [asset.contractAddress.toLowerCase(), asset]),
   );
+  const latestMetricByToken = new Map<string, (typeof metricRows)[number]>();
+  for (const metric of metricRows) {
+    if (!latestMetricByToken.has(metric.tokenAddress)) {
+      latestMetricByToken.set(metric.tokenAddress, metric);
+    }
+  }
+
+  return tokenList.map((token) => {
+    const latestMetric = latestMetricByToken.get(token.address) ?? null;
+    const canonicalAsset = canonicalByAddress.get(token.address.toLowerCase());
+
+    return {
+      address: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      canonicalStatus: token.canonicalStatus,
+      canonicalAsset: canonicalAsset
+        ? {
+            id: canonicalAsset.id,
+            symbol: canonicalAsset.symbol,
+            multiplier: canonicalAsset.currentMultiplier,
+            status: canonicalAsset.assetStatus,
+          }
+        : null,
+      metrics: latestMetric
+        ? {
+            holderCount: latestMetric.holderCount,
+            holderDelta: latestMetric.holderDelta,
+            uniqueBuyers: latestMetric.uniqueBuyers,
+            uniqueSellers: latestMetric.uniqueSellers,
+            netFlowUsd: latestMetric.netFlowUsd,
+            liquidityUsd: latestMetric.liquidityUsd,
+            depth1pctUsd: latestMetric.depth1pctUsd,
+            volumeUsd: latestMetric.volumeUsd,
+            top10Share: latestMetric.top10Share,
+            dataCompleteness: latestMetric.dataCompleteness,
+          }
+        : null,
+      lastSeenAt: toIso(token.lastSeenAt),
+    };
+  });
 }
 
 // ── Token detail ────────────────────────────────────────────────────────────
@@ -360,52 +363,56 @@ export interface TokensScannerItem {
 }
 
 export async function getTokensScannerData(db: Db): Promise<TokensScannerItem[]> {
-  const tokenList = await db.select().from(tokens);
+  const [tokenList, metricRows, signalRows] = await Promise.all([
+    db.select().from(tokens),
+    db
+      .select()
+      .from(tokenMetricSnapshots)
+      .where(eq(tokenMetricSnapshots.window, "24h"))
+      .orderBy(desc(tokenMetricSnapshots.calculatedAt)),
+    db
+      .select()
+      .from(signals)
+      .where(eq(signals.status, "ACTIVE"))
+      .orderBy(desc(signals.adjustedScore)),
+  ]);
 
-  return Promise.all(
-    tokenList.map(async (token): Promise<TokensScannerItem> => {
-      const metrics = await db
-        .select()
-        .from(tokenMetricSnapshots)
-        .where(
-          and(
-            eq(tokenMetricSnapshots.tokenAddress, token.address),
-            eq(tokenMetricSnapshots.window, "24h")
-          )
-        )
-        .orderBy(desc(tokenMetricSnapshots.calculatedAt))
-        .limit(1);
+  const latestMetricByToken = new Map<string, (typeof metricRows)[number]>();
+  for (const metric of metricRows) {
+    if (!latestMetricByToken.has(metric.tokenAddress)) {
+      latestMetricByToken.set(metric.tokenAddress, metric);
+    }
+  }
 
-      const metric = metrics[0] || null;
+  const topSignalByToken = new Map<string, (typeof signalRows)[number]>();
+  for (const signal of signalRows) {
+    if (!topSignalByToken.has(signal.entityId)) {
+      topSignalByToken.set(signal.entityId, signal);
+    }
+  }
 
-      const signalList = await db
-        .select()
-        .from(signals)
-        .where(and(eq(signals.entityId, token.address), eq(signals.status, "ACTIVE")))
-        .orderBy(desc(signals.adjustedScore))
-        .limit(1);
+  return tokenList.map((token): TokensScannerItem => {
+    const metric = latestMetricByToken.get(token.address) ?? null;
+    const latestSignal = topSignalByToken.get(token.address) ?? null;
 
-      const latestSignal = signalList[0] || null;
-
-      return {
-        address: token.address,
-        symbol: token.symbol,
-        name: token.name,
-        tokenType: token.tokenType,
-        isVerified: token.isVerified,
-        holderCount: metric?.holderCount ?? null,
-        holderDelta: metric?.holderDelta ?? null,
-        uniqueBuyers: metric?.uniqueBuyers ?? null,
-        volumeUsd: metric?.volumeUsd ?? null,
-        liquidityUsd: metric?.liquidityUsd ?? null,
-        top10Share: metric?.top10Share ?? null,
-        canonicalStatus: token.canonicalStatus,
-        opportunityScore: latestSignal?.adjustedScore ? Number(latestSignal.adjustedScore) : null,
-        riskScore: latestSignal?.riskScore ? Number(latestSignal.riskScore) : null,
-        createdAt: toIso(token.createdAt),
-      };
-    })
-  );
+    return {
+      address: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      tokenType: token.tokenType,
+      isVerified: token.isVerified,
+      holderCount: metric?.holderCount ?? null,
+      holderDelta: metric?.holderDelta ?? null,
+      uniqueBuyers: metric?.uniqueBuyers ?? null,
+      volumeUsd: metric?.volumeUsd ?? null,
+      liquidityUsd: metric?.liquidityUsd ?? null,
+      top10Share: metric?.top10Share ?? null,
+      canonicalStatus: token.canonicalStatus,
+      opportunityScore: latestSignal?.adjustedScore ?? null,
+      riskScore: latestSignal?.riskScore ?? null,
+      createdAt: toIso(token.createdAt),
+    };
+  });
 }
 
 const SCANNER_KEYS: Record<string, keyof TokensScannerItem> = {

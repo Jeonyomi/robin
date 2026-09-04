@@ -1,46 +1,33 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/config";
-import fs from "node:fs";
-import path from "node:path";
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
-const DEFAULT_DB_PATH = "data/robin.db";
-
-function ensureDbFile(): string {
-  // Explicit override wins; otherwise use local SQLite file
-  const configured = env.DATABASE_URL;
-  if (configured && configured.startsWith("sqlite:")) {
-    return configured.replace("sqlite:", "");
+function requireDatabaseUrl(): string {
+  const url = env.DATABASE_URL.trim();
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not configured. Connect Neon through the Vercel Marketplace or set a Neon Postgres connection string locally.",
+    );
   }
-  const dbPath = configured || DEFAULT_DB_PATH;
-  const abs = path.resolve(dbPath);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  return abs;
+  if (!/^postgres(ql)?:\/\//i.test(url)) {
+    throw new Error("DATABASE_URL must be a PostgreSQL connection string.");
+  }
+  return url;
 }
 
+/** Lazy Neon HTTP client, safe for Next.js serverless route handlers and local sync scripts. */
 export function getDb() {
   if (_db) return _db;
 
-  const dbPath = ensureDbFile();
-
-  // better-sqlite3 (synchronous, file-based) — data stays on this machine
-  const sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-
-  _db = drizzle(sqlite, { schema });
+  const sql = neon(requireDatabaseUrl());
+  _db = drizzle(sql, { schema });
   return _db;
 }
 
-/** True when a local DB file exists (used by API routes to decide responses) */
-export function hasLocalDb(): boolean {
-  try {
-    const dbPath = ensureDbFile();
-    return fs.existsSync(dbPath);
-  } catch {
-    return false;
-  }
+/** True when a Cloud Postgres connection is configured. */
+export function hasDatabase(): boolean {
+  return /^postgres(ql)?:\/\//i.test(env.DATABASE_URL.trim());
 }

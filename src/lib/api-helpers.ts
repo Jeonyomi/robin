@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { hasLocalDb } from "@/lib/db";
+import { hasDatabase } from "@/lib/db";
 import { getSnapshotStatus } from "@/lib/snapshot";
 
 /**
- * UI-only mode: on Vercel (or any env without a local SQLite file), the API
- * returns empty data structures with an explicit note instead of crashing.
- * Data lives on the local machine — see `pnpm sync` and `pnpm dev`.
+ * Fallback mode: when Cloud Postgres is not configured, the API serves the
+ * last published Blob snapshot and otherwise returns an explicit empty state.
  */
 export function uiOnlyResponse(endpoint: string) {
   return NextResponse.json({
@@ -13,14 +12,29 @@ export function uiOnlyResponse(endpoint: string) {
     meta: {
       uiOnly: true,
       message:
-        "UI-only deployment — on-chain data is stored and synced on the local machine. Run `pnpm dev` + `pnpm sync` there.",
+        "Cloud database is not configured and no published snapshot is available.",
       endpoint,
       snapshot: getSnapshotStatus(),
     },
   });
 }
 
-/** True when the local DB file exists and can be queried */
+/** True when the Neon Postgres database is configured. */
 export function dataAvailable(): boolean {
-  return hasLocalDb();
+  return hasDatabase();
+}
+
+export type DatabaseAttempt<T> =
+  | { ok: true; data: T; attempted: true }
+  | { ok: false; attempted: boolean };
+
+/** Query Neon when configured without preventing the route from using its snapshot fallback. */
+export async function tryDatabase<T>(load: () => Promise<T>): Promise<DatabaseAttempt<T>> {
+  if (!dataAvailable()) return { ok: false, attempted: false };
+  try {
+    return { ok: true, data: await load(), attempted: true };
+  } catch (error) {
+    console.error("Neon query failed; attempting snapshot fallback:", error);
+    return { ok: false, attempted: true };
+  }
 }

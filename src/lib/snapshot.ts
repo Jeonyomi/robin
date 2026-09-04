@@ -1,8 +1,8 @@
 /**
- * Data snapshot bridge — lets the UI-only Vercel deployment serve the same
- * payloads that the local machine produces.
+ * Data snapshot bridge — read-only fallback for deployments when the Neon
+ * database is temporarily unavailable or not configured.
  *
- * Flow: `pnpm sync` (locally) → builds data/snapshot.json → uploads to Vercel
+ * Flow: `pnpm sync` → queries Neon → builds data/snapshot.json → uploads to Vercel
  * Blob (public store, fixed `robin/snapshot.json` path) → the deployed API
  * routes fetch that URL. The public URL is baked in as a fallback so the
  * deployment works even without the SNAPSHOT_URL env var; set SNAPSHOT_URL

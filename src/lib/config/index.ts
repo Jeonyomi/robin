@@ -10,6 +10,7 @@ const envSchema = z.object({
 
   // Database
   DATABASE_URL: z.string().default(""),
+  DATABASE_URL_UNPOOLED: z.string().optional(),
 
   // Robinhood Chain
   ROBINHOOD_RPC_URL: z.string().url().default("https://rpc.mainnet.chain.robinhood.com"),

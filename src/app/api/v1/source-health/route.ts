@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dataAvailable } from "@/lib/api-helpers";
+import { tryDatabase } from "@/lib/api-helpers";
 import { getSyncStatesData } from "@/lib/queries";
 import { loadSnapshot } from "@/lib/snapshot";
 
@@ -15,10 +15,10 @@ async function checkUrl(url: string): Promise<string> {
 
 export async function GET() {
   try {
-    // Sync states come from the local DB when present, otherwise the snapshot
-    const syncStates = dataAvailable()
-      ? await getSyncStatesData(getDb())
-      : (await loadSnapshot())?.syncStates ?? [];
+    // Sync states come from Neon when healthy, otherwise the last snapshot.
+    const database = await tryDatabase(() => getSyncStatesData(getDb()));
+    const snapshot = database.ok ? null : await loadSnapshot();
+    const syncStates = database.ok ? database.data : snapshot?.syncStates ?? [];
 
     const findState = (source: string, jobName?: string) =>
       syncStates.find((s) => s.source === source && (!jobName || s.jobName === jobName));
@@ -46,8 +46,8 @@ export async function GET() {
       },
       {
         name: "Database",
-        url: dataAvailable() ? "SQLite (local)" : "Snapshot (Vercel Blob)",
-        status: dataAvailable() || syncStates.length > 0 ? "healthy" : "unavailable",
+        url: database.ok ? "Neon Postgres" : "Snapshot (Vercel Blob)",
+        status: database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable",
         lastSuccessAt: syncStates[0]?.lastSuccessAt || null,
         lastError: null,
       },
@@ -57,13 +57,14 @@ export async function GET() {
       data: {
         sources,
         overallStatus:
-          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy"
+          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" && database.ok
             ? "healthy"
             : "degraded",
       },
       meta: {
         checkedAt: new Date().toISOString(),
-        servedFrom: dataAvailable() ? "local-db" : "snapshot",
+        servedFrom: database.ok ? "neon-postgres" : "snapshot",
+        degraded: !database.ok && database.attempted,
       },
     });
   } catch (error) {

@@ -23,13 +23,16 @@
     "build:snapshot": "tsx scripts/build-snapshot.ts",
     "publish:snapshot": "tsx scripts/publish-snapshot.ts",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "tsx scripts/check-database.ts",
+    "db:import-sqlite": "tsx scripts/import-sqlite-to-neon.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@tanstack/react-query": "^5.102.8",
     "@vercel/blob": "^2.8.0",
-    "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "echarts": "^6.1.0",
@@ -60,7 +63,8 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "better-sqlite3": "^13.0.3"
   },
   "packageManager": "pnpm@11.25.0"
 }

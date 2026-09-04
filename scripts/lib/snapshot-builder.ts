@@ -20,7 +20,7 @@ import {
 import type { OverviewData, StockTokenRow } from "@/lib/queries";
 import type { Snapshot } from "@/lib/snapshot";
 
-/** Re-run every read query against the local SQLite DB and collect payloads. */
+/** Re-run every read query against Neon Postgres and collect payloads. */
 export async function buildSnapshot(): Promise<Snapshot> {
   const db = getDb();
 
