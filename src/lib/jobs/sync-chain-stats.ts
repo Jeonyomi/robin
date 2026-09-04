@@ -12,24 +12,62 @@ function previousBlockHeight(value: unknown): number | null {
 export async function syncChainStats() {
   const db = getDb();
   const started = new Date();
-  const key = and(eq(sourceSyncState.source, "blockscout"), eq(sourceSyncState.jobName, "chain-stats"));
+  const statsKey = and(eq(sourceSyncState.source, "blockscout"), eq(sourceSyncState.jobName, "chain-stats"));
+  const gasKey = and(eq(sourceSyncState.source, "blockscout"), eq(sourceSyncState.jobName, "gas-prices"));
 
-  await db.insert(sourceSyncState).values({
-    source: "blockscout",
-    jobName: "chain-stats",
-    lastStartedAt: started,
-    status: "running",
-  }).onConflictDoUpdate({
-    target: [sourceSyncState.source, sourceSyncState.jobName],
-    set: { lastStartedAt: started, status: "running" },
-  });
+  await Promise.all([
+    db.insert(sourceSyncState).values({
+      source: "blockscout",
+      jobName: "chain-stats",
+      lastStartedAt: started,
+      status: "running",
+    }).onConflictDoUpdate({
+      target: [sourceSyncState.source, sourceSyncState.jobName],
+      set: { lastStartedAt: started, status: "running" },
+    }),
+    db.insert(sourceSyncState).values({
+      source: "blockscout",
+      jobName: "gas-prices",
+      lastStartedAt: started,
+      status: "running",
+    }).onConflictDoUpdate({
+      target: [sourceSyncState.source, sourceSyncState.jobName],
+      set: { lastStartedAt: started, status: "running" },
+    }),
+  ]);
 
   try {
     const [existingRows, transferRows] = await Promise.all([
-      db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(key).limit(1),
+      db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(statsKey).limit(1),
       db.select({ block: sql<number>`max(${tokenTransfers.blockNumber})` }).from(tokenTransfers),
     ]);
     const stats = await fetchChainStats();
+    const gasValues = stats.gasPricesGwei
+      ? [stats.gasPricesGwei.slow, stats.gasPricesGwei.average, stats.gasPricesGwei.fast]
+      : [];
+    const gasStored = gasValues.some((value) => value != null && Number.isFinite(value) && value >= 0);
+
+    if (gasStored) {
+      await db.update(sourceSyncState).set({
+        cursor: {
+          gasPricesGwei: stats.gasPricesGwei,
+          gasPriceUpdatedAt: stats.gasPriceUpdatedAt,
+          observedAt: stats.observedAt,
+        },
+        lastSuccessAt: new Date(),
+        recordsProcessed: 1,
+        status: "success",
+        lastError: null,
+      }).where(gasKey);
+    } else {
+      await db.update(sourceSyncState).set({
+        lastErrorAt: new Date(),
+        lastError: "Blockscout stats response did not include a usable gas price",
+        recordsProcessed: 0,
+        status: "degraded",
+      }).where(gasKey);
+    }
+
     const previousHeight = previousBlockHeight(existingRows[0]?.cursor);
     const latestTransferBlock = Number(transferRows[0]?.block) || 0;
     const minimumKnownHeight = Math.max(previousHeight ?? 0, latestTransferBlock);
@@ -40,8 +78,8 @@ export async function syncChainStats() {
         lastError: message,
         recordsProcessed: 0,
         status: "degraded",
-      }).where(key);
-      return { ignored: true, reason: message };
+      }).where(statsKey);
+      return { ignored: true, gasStored, reason: message };
     }
 
     await db.update(sourceSyncState).set({
@@ -50,15 +88,22 @@ export async function syncChainStats() {
       recordsProcessed: 1,
       status: "success",
       lastError: null,
-    }).where(key);
+    }).where(statsKey);
     return stats;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    await db.update(sourceSyncState).set({
-      lastErrorAt: new Date(),
-      lastError: message,
-      status: "error",
-    }).where(key);
+    await Promise.all([
+      db.update(sourceSyncState).set({
+        lastErrorAt: new Date(),
+        lastError: message,
+        status: "error",
+      }).where(statsKey),
+      db.update(sourceSyncState).set({
+        lastErrorAt: new Date(),
+        lastError: message,
+        status: "error",
+      }).where(gasKey),
+    ]);
     throw error;
   }
 }

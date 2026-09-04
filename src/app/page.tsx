@@ -12,6 +12,11 @@ function compact(value: number | null | undefined) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
+function gasPrice(value: number | null | undefined) {
+  if (value == null) return "Not observed";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+}
+
 function relativeTime(value: string | null | undefined) {
   if (!value) return "Not indexed";
   const delta = Date.now() - new Date(value).getTime();
@@ -98,11 +103,16 @@ export default function DashboardPage() {
         <div className="empty-state">The latest observation could not be loaded. Check Data Sources for source health.</div>
       ) : (
         <>
-          <section className="metric-grid" aria-label="Observed activity summary">
+          <section className="metric-grid metric-grid-five" aria-label="Observed activity and network gas summary">
             <Metric label="TRANSFER EVENTS" value={compact(data?.activity.transferEvents)} note={`Stored observations / ${window}`} />
             <Metric label="ACTIVE ADDRESSES" value={compact(data?.activity.activeAddresses)} note="Unique addresses, including contracts" />
             <Metric label="ACTIVE TOKENS" value={compact(data?.activity.activeTokens)} note={`Of ${compact(data?.coverage.trackedTokens)} tracked canonical assets`} />
             <Metric label="CHAIN TRANSACTIONS" value={compact(data?.chain?.totalTransactions)} note="Chain-wide / Blockscout" />
+            <Metric
+              label="SUGGESTED GAS"
+              value={data?.gas?.averageGwei != null ? `${gasPrice(data.gas.averageGwei)} Gwei` : "Not observed"}
+              note={`Standard · per gas unit · ${relativeTime(data?.gas?.updatedAt)}`}
+            />
           </section>
 
           <section className="scope-banner">
@@ -132,15 +142,31 @@ export default function DashboardPage() {
             <article className="panel chain-panel">
               <div className="panel-heading">
                 <div>
-                  <p className="section-kicker">CHAIN STATE</p>
-                  <h2>Public network snapshot</h2>
+                  <p className="section-kicker">NETWORK COST · CHAIN STATE</p>
+                  <h2>Gas &amp; network snapshot</h2>
                 </div>
+                <span className="method-chip">Suggested · not total fee</span>
               </div>
+              <div className="gas-tier-grid" aria-label="Blockscout suggested gas prices">
+                {([
+                  ["Slow", data?.gas?.slowGwei],
+                  ["Standard", data?.gas?.averageGwei],
+                  ["Fast", data?.gas?.fastGwei],
+                ] as const).map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong>{gasPrice(value)}</strong>
+                    <small>{value == null ? "Unavailable" : "Gwei"}</small>
+                  </div>
+                ))}
+              </div>
+              <p className="gas-note">
+                Blockscout suggested price per gas unit · updated {relativeTime(data?.gas?.updatedAt)}. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
+              </p>
               <dl className="chain-list">
                 <div><dt>Block height</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
                 <div><dt>Total addresses</dt><dd>{compact(data?.chain?.totalAddresses)}</dd></div>
                 <div><dt>Average block time</dt><dd>{data?.chain?.averageBlockTimeMs != null ? `${data.chain.averageBlockTimeMs.toFixed(0)} ms` : "Not observed"}</dd></div>
-                <div><dt>Fast gas</dt><dd>{data?.chain?.gasPricesGwei?.fast != null ? `${data.chain.gasPricesGwei.fast} Gwei` : "Not observed"}</dd></div>
                 <div><dt>Latest tracked block</dt><dd>{data?.activity.latestBlock?.toLocaleString() ?? "Not observed"}</dd></div>
               </dl>
               <a className="text-link" href="https://robinhoodchain.blockscout.com" target="_blank" rel="noreferrer">Open source explorer ↗</a>

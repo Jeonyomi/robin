@@ -27,6 +27,7 @@ export type BlockscoutChainStats = {
   networkUtilizationPct: number | null;
   gasUsedToday: string | null;
   gasPricesGwei: { slow: number | null; average: number | null; fast: number | null } | null;
+  gasPriceUpdatedAt: string | null;
   observedAt: string;
 };
 
@@ -59,6 +60,7 @@ export async function fetchChainStats(): Promise<BlockscoutChainStats> {
           fast: value.gas_prices.fast ?? null,
         }
       : null,
-    observedAt: value.gas_price_updated_at ?? new Date().toISOString(),
+    gasPriceUpdatedAt: value.gas_price_updated_at ?? null,
+    observedAt: new Date().toISOString(),
   };
 }

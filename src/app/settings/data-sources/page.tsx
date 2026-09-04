@@ -12,7 +12,8 @@ type SourceHealth = {
 
 const sourceNotes: Record<string, string> = {
   "Robinhood Assets API": "Canonical asset identity and contract registry.",
-  "Blockscout Chain Stats": "Chain-wide block, transaction, address, gas, and utilization snapshot.",
+  "Blockscout Chain Stats": "Chain-wide block, transaction, address, and utilization snapshot.",
+  "Blockscout Gas Price": "Slow, standard, and fast suggested prices in Gwei per gas unit. Stored separately so a lagging block total cannot suppress a newer gas observation.",
   "Blockscout Token Transfers": "Page-bounded transfer observations for rotating canonical-token batches.",
   Database: "Operational source of truth shared by the indexer and dashboard.",
 };

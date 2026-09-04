@@ -183,10 +183,17 @@ button, input { font: inherit; }
 .panel-heading h2 { margin: 7px 0 0; font-size: 18px; letter-spacing: -.025em; font-weight: 640; }
 .panel-heading p:not(.section-kicker) { max-width: 720px; margin: 6px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
 .method-chip { white-space: nowrap; padding: 6px 9px; border: 1px solid var(--border); border-radius: 999px; color: #748078; font-size: 9px; letter-spacing: .04em; }
+.chain-panel .panel-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
 .chain-list { display: grid; gap: 0; margin: 0 0 18px; }
 .chain-list > div { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid #edf0ee; }
 .chain-list dt { color: #7d8881; font-size: 11px; }
 .chain-list dd { margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 650; }
+.gas-tier-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
+.gas-tier-grid > div { min-width: 0; padding: 11px 9px; border: 1px solid #e5ebe7; border-radius: 9px; background: #f8faf8; text-align: center; }
+.gas-tier-grid span, .gas-tier-grid small { display: block; color: #849087; font-size: 8px; line-height: 1.3; }
+.gas-tier-grid span { letter-spacing: .07em; text-transform: uppercase; }
+.gas-tier-grid strong { display: block; overflow: hidden; margin: 7px 0 3px; font-family: var(--font-mono); font-size: 16px; letter-spacing: -.03em; text-overflow: ellipsis; }
+.gas-note { margin: 0 0 14px; color: #78837c; font-size: 9px; line-height: 1.55; }
 .text-link { color: #257d4d; font-size: 11px; font-weight: 600; }
 .text-link:hover { color: #155e37; }
 

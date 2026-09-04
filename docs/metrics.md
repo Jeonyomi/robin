@@ -40,9 +40,15 @@ A value calculated from transfers stored by Robin's bounded rotating collector. 
 
 ### Gas price
 
-- **Definition:** slow, average, and fast gas observations
+- **Definition:** slow, average/standard, and fast suggested gas prices reported by Blockscout
 - **Source:** `/api/v2/stats.gas_prices`
-- **Unit:** Gwei
+- **API definition:** [Blockscout — Retrieve blockchain network statistics and metrics](https://docs.blockscout.com/api-reference/stats/retrieve-blockchain-network-statistics-and-metrics)
+- **Freshness:** `/api/v2/stats.gas_price_updated_at`, written to the independent `gas-prices` state by the scheduled `chain-stats` job
+- **Unit:** Gwei per gas unit
+- **UI:** the headline value is Blockscout's average/standard suggestion; slow and fast are shown as context
+- **Caveat:** this is not an actual or quoted transaction fee. Actual fee is `gas used × effective gas price` and varies by transaction execution.
+- **Conversion:** no native-token or USD total is shown without a separately verified gas-use and price basis
+- **Failure boundary:** gas from a valid `/stats` response is retained even when a lagging `total_blocks` value is rejected by the chain-height regression guard; this adds no extra upstream request
 
 ## Tracked-token metrics
 

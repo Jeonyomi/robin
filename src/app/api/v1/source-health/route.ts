@@ -26,9 +26,11 @@ export async function GET() {
 
     const robinhoodState = findState("robinhood", "canonical-assets");
     const blockscoutStatsState = findState("blockscout", "chain-stats");
+    const gasState = findState("blockscout", "gas-prices");
     const transferState = findState("blockscout", "token-transfers");
     const robinhoodStatus = storedStatus(robinhoodState);
     const statsStatus = storedStatus(blockscoutStatsState);
+    const gasStatus = storedStatus(gasState, 1);
     const transferStatus = storedStatus(transferState);
     const databaseStatus = database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable";
 
@@ -46,6 +48,13 @@ export async function GET() {
         status: statsStatus,
         lastSuccessAt: blockscoutStatsState?.lastSuccessAt || null,
         lastError: blockscoutStatsState?.lastError || null,
+      },
+      {
+        name: "Blockscout Gas Price",
+        url: "https://robinhoodchain.blockscout.com/api/v2/stats",
+        status: gasStatus,
+        lastSuccessAt: gasState?.lastSuccessAt || null,
+        lastError: gasState?.lastError || null,
       },
       {
         name: "Blockscout Token Transfers",
@@ -67,7 +76,7 @@ export async function GET() {
       data: {
         sources,
         overallStatus:
-          robinhoodStatus === "healthy" && statsStatus === "healthy" &&
+          robinhoodStatus === "healthy" && statsStatus === "healthy" && gasStatus === "healthy" &&
           transferStatus === "healthy" && databaseStatus === "healthy"
             ? "healthy"
             : "degraded",

@@ -37,7 +37,8 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 ### Overview
 
-- Chain-wide total transactions, addresses, block height, block time, and gas snapshot
+- Chain-wide total transactions, addresses, block height, and block time
+- Blockscout slow, standard, and fast suggested gas prices in Gwei per gas unit, with independent freshness, no additional API request, and an explicit total-fee caveat
 - Stored transfer events in the selected window
 - Unique addresses, including contracts, and active tracked tokens
 - Current transfer-index rotation coverage and freshness

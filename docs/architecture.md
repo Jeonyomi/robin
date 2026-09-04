@@ -81,7 +81,7 @@ The overview query separates two scopes:
 
 ### Chain-wide snapshot
 
-Latest public Blockscout totals and network observations stored in the `chain-stats` sync cursor.
+Latest public Blockscout totals and network observations stored in the `chain-stats` sync cursor. Suggested slow, average, and fast gas prices from the same request are stored independently under `gas-prices`, with the provider's update timestamp, so a lagging block-total response does not suppress a newer gas observation. Gas is exposed as Gwei per gas unit, not as an actual transaction fee or USD estimate.
 
 ### Tracked-token observations
 

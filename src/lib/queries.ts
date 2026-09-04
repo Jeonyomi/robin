@@ -72,6 +72,17 @@ export interface RecentTransferRow {
   timestamp: string;
 }
 
+export interface GasPriceData {
+  slowGwei: number | null;
+  averageGwei: number | null;
+  fastGwei: number | null;
+  unit: "gwei-per-gas";
+  kind: "suggested-gas-price";
+  source: "blockscout-stats";
+  updatedAt: string | null;
+  estimatedTotalFee: false;
+}
+
 export interface ChainStatsData {
   totalBlocks: number;
   totalTransactions: number;
@@ -79,12 +90,14 @@ export interface ChainStatsData {
   averageBlockTimeMs: number | null;
   networkUtilizationPct: number | null;
   gasPricesGwei: { slow: number | null; average: number | null; fast: number | null } | null;
+  gas: GasPriceData | null;
   observedAt: string;
 }
 
 export interface OverviewData {
   window: string;
   chain: ChainStatsData | null;
+  gas: GasPriceData | null;
   activity: {
     transferEvents: number;
     activeAddresses: number;
@@ -145,6 +158,33 @@ function numberValue(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseGasPrice(value: unknown): GasPriceData | null {
+  const row = objectValue(value);
+  const gas = objectValue(row?.gasPricesGwei);
+  if (!row || !gas) return null;
+  const slowGwei = gas.slow == null ? null : numberValue(gas.slow, Number.NaN);
+  const averageGwei = gas.average == null ? null : numberValue(gas.average, Number.NaN);
+  const fastGwei = gas.fast == null ? null : numberValue(gas.fast, Number.NaN);
+  const values = [slowGwei, averageGwei, fastGwei];
+  if (!values.some((item) => item != null && Number.isFinite(item) && item >= 0)) return null;
+  const valid = (item: number | null) => item != null && Number.isFinite(item) && item >= 0 ? item : null;
+  const updatedAt = typeof row.gasPriceUpdatedAt === "string"
+    ? toIso(row.gasPriceUpdatedAt)
+    : typeof row.observedAt === "string"
+      ? toIso(row.observedAt)
+      : null;
+  return {
+    slowGwei: valid(slowGwei),
+    averageGwei: valid(averageGwei),
+    fastGwei: valid(fastGwei),
+    unit: "gwei-per-gas",
+    kind: "suggested-gas-price",
+    source: "blockscout-stats",
+    updatedAt,
+    estimatedTotalFee: false,
+  };
+}
+
 function parseChainStats(value: unknown): ChainStatsData | null {
   const row = objectValue(value);
   if (!row) return null;
@@ -152,7 +192,7 @@ function parseChainStats(value: unknown): ChainStatsData | null {
   const totalTransactions = numberValue(row.totalTransactions, Number.NaN);
   const totalAddresses = numberValue(row.totalAddresses, Number.NaN);
   if (![totalBlocks, totalTransactions, totalAddresses].every(Number.isFinite)) return null;
-  const gas = objectValue(row.gasPricesGwei);
+  const gas = parseGasPrice(row);
   return {
     totalBlocks,
     totalTransactions,
@@ -160,10 +200,11 @@ function parseChainStats(value: unknown): ChainStatsData | null {
     averageBlockTimeMs: row.averageBlockTimeMs == null ? null : numberValue(row.averageBlockTimeMs),
     networkUtilizationPct: row.networkUtilizationPct == null ? null : numberValue(row.networkUtilizationPct),
     gasPricesGwei: gas ? {
-      slow: gas.slow == null ? null : numberValue(gas.slow),
-      average: gas.average == null ? null : numberValue(gas.average),
-      fast: gas.fast == null ? null : numberValue(gas.fast),
+      slow: gas.slowGwei,
+      average: gas.averageGwei,
+      fast: gas.fastGwei,
     } : null,
+    gas,
     observedAt: typeof row.observedAt === "string" ? row.observedAt : new Date(0).toISOString(),
   };
 }
@@ -256,6 +297,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
   const aggregate = aggregateResult.rows[0];
   const transferState = stateRows.find((row) => row.jobName === "token-transfers");
   const statsState = stateRows.find((row) => row.jobName === "chain-stats");
+  const gasState = stateRows.find((row) => row.jobName === "gas-prices");
   const cursor = parseTransferCursor(transferState?.cursor);
   const trackedTokens = numberValue(tokenCounts[0][0]?.count);
   const tokensWithStoredTransfers = numberValue(tokenCounts[1][0]?.count);
@@ -267,8 +309,18 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
 
 
   const lastIndexedAt = toIso(transferState?.lastSuccessAt);
-  const chain = parseChainStats(statsState?.cursor);
-  const lastUpdatedAt = [lastIndexedAt, toIso(statsState?.lastSuccessAt)]
+  const storedChain = parseChainStats(statsState?.cursor);
+  const gas = parseGasPrice(gasState?.cursor) ?? storedChain?.gas ?? null;
+  const chain = storedChain && gas ? {
+    ...storedChain,
+    gas,
+    gasPricesGwei: {
+      slow: gas.slowGwei,
+      average: gas.averageGwei,
+      fast: gas.fastGwei,
+    },
+  } : storedChain;
+  const lastUpdatedAt = [lastIndexedAt, toIso(statsState?.lastSuccessAt), toIso(gasState?.lastSuccessAt)]
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1) ?? new Date(0).toISOString();
@@ -276,6 +328,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
   return {
     window,
     chain,
+    gas,
     activity: {
       transferEvents: numberValue(aggregate?.transfer_count),
       activeAddresses: numberValue(aggregate?.active_addresses),
