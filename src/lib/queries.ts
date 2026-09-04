@@ -8,13 +8,18 @@
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
+  buildActivityEvidence,
+  calculateActivityIndex,
+  calculateMomentum,
+  classifyTransfer,
+} from "@/lib/domain/activity";
+import {
   tokens,
   canonicalAssets,
   tokenMetricSnapshots,
   signals,
   sourceSyncState,
   tokenTransfers,
-  economicActions,
 } from "@/db/schema";
 
 export type Db = ReturnType<typeof getDb>;
@@ -30,114 +35,360 @@ function toIso(v: Date | string | number | null | undefined): string | null {
   if (v == null) return null;
   if (v instanceof Date) return v.toISOString();
   if (typeof v === "number") return new Date(v).toISOString();
-  return v;
+  const parsed = new Date(v);
+  return Number.isNaN(parsed.getTime()) ? v : parsed.toISOString();
 }
 
-// ── Overview ────────────────────────────────────────────────────────────────
+// ── Observed on-chain activity ──────────────────────────────────────────────
 
 export interface OverviewTimelinePoint {
   timestamp: string;
-  bridgeIn: number;
-  bridgeOut: number;
-  dexBuy: number;
-  dexSell: number;
+  transfers: number;
+  activeAddresses: number;
+  mints: number;
+  burns: number;
+}
+
+export interface ActivityTokenRow {
+  address: string;
+  symbol: string | null;
+  name: string | null;
+  transferCount: number;
+  previousTransferCount: number;
+  activeAddresses: number;
+  momentumPct: number | null;
+  holderCount: number | null;
+  holderDelta: number | null;
+  latestBlock: number;
+  lastTransferAt: string;
+  activityIndex: number;
+  evidence: string[];
+}
+
+export interface RecentTransferRow {
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  tokenAddress: string;
+  symbol: string | null;
+  fromAddress: string;
+  toAddress: string;
+  normalizedValue: number | null;
+  kind: "mint" | "burn" | "transfer";
+  timestamp: string;
+}
+
+export interface ChainStatsData {
+  totalBlocks: number;
+  totalTransactions: number;
+  totalAddresses: number;
+  averageBlockTimeMs: number | null;
+  networkUtilizationPct: number | null;
+  gasPricesGwei: { slow: number | null; average: number | null; fast: number | null } | null;
+  observedAt: string;
 }
 
 export interface OverviewData {
-  netCapitalInflow24h: number;
-  activeWallets24h: number;
-  dexVolume24h: number;
-  usdgNetFlow24h: number;
-  signals24h: number;
-  highRiskAlerts: number;
-  tokenCount: number;
-  lastUpdatedAt: string;
+  window: string;
+  chain: ChainStatsData | null;
+  activity: {
+    transferEvents: number;
+    activeAddresses: number;
+    activeTokens: number;
+    mintEvents: number;
+    burnEvents: number;
+    latestBlock: number | null;
+    lastObservedAt: string | null;
+  };
+  coverage: {
+    trackedTokens: number;
+    tokensWithStoredTransfers: number;
+    scannedInCycle: number;
+    completedCycles: number;
+    cycleProgressPct: number;
+    lastBatchSize: number;
+    lookbackHours: number;
+    status: string;
+    lastIndexedAt: string | null;
+  };
   timeline: OverviewTimelinePoint[];
-  composition: Array<{ name: string; value: number }>;
+  topTokens: ActivityTokenRow[];
+  recentTransfers: RecentTransferRow[];
+  dataQuality: {
+    scope: string;
+    completeness: "partial" | "cycle-complete";
+    syntheticExcluded: true;
+    note: string;
+  };
+  lastUpdatedAt: string;
+}
+
+type AggregateRow = {
+  transfer_count: number | string;
+  active_tokens: number | string;
+  active_addresses: number | string;
+  mint_events: number | string;
+  burn_events: number | string;
+  latest_block: number | string | null;
+  last_observed_at: Date | string | null;
+};
+
+type TimelineRow = {
+  bucket: Date | string;
+  transfers: number | string;
+  active_addresses: number | string;
+  mints: number | string;
+  burns: number | string;
+};
+
+type LeaderRow = {
+  token_address: string;
+  symbol: string | null;
+  name: string | null;
+  current_transfers: number | string;
+  previous_transfers: number | string;
+  active_addresses: number | string;
+  holder_count: number | string | null;
+  holder_delta: number | string | null;
+  latest_block: number | string;
+  last_transfer_at: Date | string;
+};
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function numberValue(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseChainStats(value: unknown): ChainStatsData | null {
+  const row = objectValue(value);
+  if (!row) return null;
+  const totalBlocks = numberValue(row.totalBlocks, Number.NaN);
+  const totalTransactions = numberValue(row.totalTransactions, Number.NaN);
+  const totalAddresses = numberValue(row.totalAddresses, Number.NaN);
+  if (![totalBlocks, totalTransactions, totalAddresses].every(Number.isFinite)) return null;
+  const gas = objectValue(row.gasPricesGwei);
+  return {
+    totalBlocks,
+    totalTransactions,
+    totalAddresses,
+    averageBlockTimeMs: row.averageBlockTimeMs == null ? null : numberValue(row.averageBlockTimeMs),
+    networkUtilizationPct: row.networkUtilizationPct == null ? null : numberValue(row.networkUtilizationPct),
+    gasPricesGwei: gas ? {
+      slow: gas.slow == null ? null : numberValue(gas.slow),
+      average: gas.average == null ? null : numberValue(gas.average),
+      fast: gas.fast == null ? null : numberValue(gas.fast),
+    } : null,
+    observedAt: typeof row.observedAt === "string" ? row.observedAt : new Date(0).toISOString(),
+  };
+}
+
+function parseTransferCursor(value: unknown) {
+  const row = objectValue(value);
+  return {
+    scannedInCycle: numberValue(row?.scannedInCycle),
+    completedCycles: numberValue(row?.completedCycles),
+    totalTokens: numberValue(row?.totalTokens),
+    lastBatchSize: numberValue(row?.lastBatchSize),
+    lookbackHours: numberValue(row?.lookbackHours, 48),
+  };
 }
 
 export async function getOverviewData(db: Db, window: string): Promise<OverviewData> {
+  const hours = windowHours(window);
   const now = new Date();
-  const windowStart = new Date(now.getTime() - windowHours(window) * 60 * 60 * 1000);
+  const windowStart = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  const previousStart = new Date(now.getTime() - hours * 2 * 60 * 60 * 1000);
+  const zeroAddress = "0x0000000000000000000000000000000000000000";
 
-  const tokenCount = await db.select({ count: sql<number>`count(*)` }).from(tokens);
+  const [aggregateResult, timelineResult, leadersResult, recentRows, tokenCounts, stateRows] = await Promise.all([
+    db.execute<AggregateRow>(sql`
+      SELECT
+        count(*)::int AS transfer_count,
+        count(DISTINCT token_address)::int AS active_tokens,
+        (SELECT count(DISTINCT address)::int FROM (
+          SELECT from_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+          UNION
+          SELECT to_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+        ) addresses) AS active_addresses,
+        count(*) FILTER (WHERE from_address = ${zeroAddress})::int AS mint_events,
+        count(*) FILTER (WHERE to_address = ${zeroAddress})::int AS burn_events,
+        max(block_number) AS latest_block,
+        max(timestamp) AS last_observed_at
+      FROM token_transfers
+      WHERE timestamp >= ${windowStart}
+    `),
+    db.execute<TimelineRow>(sql`
+      WITH bucket_counts AS (
+        SELECT date_trunc('hour', timestamp) AS bucket,
+          count(*)::int AS transfers,
+          count(*) FILTER (WHERE from_address = ${zeroAddress})::int AS mints,
+          count(*) FILTER (WHERE to_address = ${zeroAddress})::int AS burns
+        FROM token_transfers
+        WHERE timestamp >= ${windowStart}
+        GROUP BY 1
+      ), address_events AS (
+        SELECT date_trunc('hour', timestamp) AS bucket, from_address AS address
+        FROM token_transfers WHERE timestamp >= ${windowStart}
+        UNION
+        SELECT date_trunc('hour', timestamp) AS bucket, to_address AS address
+        FROM token_transfers WHERE timestamp >= ${windowStart}
+      ), address_counts AS (
+        SELECT bucket, count(DISTINCT address)::int AS active_addresses
+        FROM address_events GROUP BY bucket
+      )
+      SELECT b.bucket, b.transfers, COALESCE(a.active_addresses, 0)::int AS active_addresses, b.mints, b.burns
+      FROM bucket_counts b LEFT JOIN address_counts a USING (bucket)
+      ORDER BY b.bucket
+    `),
+    db.execute<LeaderRow>(sql`
+      WITH counts AS (
+        SELECT token_address,
+          count(*) FILTER (WHERE timestamp >= ${windowStart})::int AS current_transfers,
+          count(*) FILTER (WHERE timestamp < ${windowStart})::int AS previous_transfers,
+          max(block_number) FILTER (WHERE timestamp >= ${windowStart}) AS latest_block,
+          max(timestamp) FILTER (WHERE timestamp >= ${windowStart}) AS last_transfer_at
+        FROM token_transfers
+        WHERE timestamp >= ${previousStart}
+        GROUP BY token_address
+      ), address_events AS (
+        SELECT token_address, from_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+        UNION
+        SELECT token_address, to_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+      ), address_counts AS (
+        SELECT token_address, count(DISTINCT address)::int AS active_addresses
+        FROM address_events GROUP BY token_address
+      ), latest_metrics AS (
+        SELECT DISTINCT ON (token_address) token_address, holder_count, holder_delta
+        FROM token_metric_snapshots
+        WHERE "window" = '24h'
+        ORDER BY token_address, calculated_at DESC
+      )
+      SELECT c.token_address, t.symbol, t.name, c.current_transfers, c.previous_transfers,
+        COALESCE(a.active_addresses, 0)::int AS active_addresses,
+        m.holder_count, m.holder_delta, c.latest_block, c.last_transfer_at
+      FROM counts c
+      LEFT JOIN tokens t ON t.address = c.token_address
+      LEFT JOIN address_counts a ON a.token_address = c.token_address
+      LEFT JOIN latest_metrics m ON m.token_address = c.token_address
+      WHERE c.current_transfers > 0
+      ORDER BY c.current_transfers DESC, a.active_addresses DESC
+      LIMIT 12
+    `),
+    db.select({
+      txHash: tokenTransfers.txHash,
+      logIndex: tokenTransfers.logIndex,
+      blockNumber: tokenTransfers.blockNumber,
+      tokenAddress: tokenTransfers.tokenAddress,
+      symbol: tokens.symbol,
+      fromAddress: tokenTransfers.fromAddress,
+      toAddress: tokenTransfers.toAddress,
+      normalizedValue: tokenTransfers.normalizedValue,
+      timestamp: tokenTransfers.timestamp,
+    }).from(tokenTransfers)
+      .leftJoin(tokens, eq(tokens.address, tokenTransfers.tokenAddress))
+      .where(gte(tokenTransfers.timestamp, windowStart))
+      .orderBy(desc(tokenTransfers.timestamp), desc(tokenTransfers.blockNumber))
+      .limit(12),
+    Promise.all([
+      db.select({ count: sql<number>`count(*)::int` }).from(tokens).where(eq(tokens.canonicalStatus, "CANONICAL")),
+      db.select({ count: sql<number>`count(DISTINCT token_address)::int` }).from(tokenTransfers),
+    ]),
+    db.select({
+      jobName: sourceSyncState.jobName,
+      cursor: sourceSyncState.cursor,
+      lastSuccessAt: sourceSyncState.lastSuccessAt,
+      status: sourceSyncState.status,
+    }).from(sourceSyncState).where(eq(sourceSyncState.source, "blockscout")),
+  ]);
 
-  const transferCount = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(tokenTransfers)
-    .where(gte(tokenTransfers.timestamp, windowStart));
+  const aggregate = aggregateResult.rows[0];
+  const transferState = stateRows.find((row) => row.jobName === "token-transfers");
+  const statsState = stateRows.find((row) => row.jobName === "chain-stats");
+  const cursor = parseTransferCursor(transferState?.cursor);
+  const trackedTokens = numberValue(tokenCounts[0][0]?.count);
+  const tokensWithStoredTransfers = numberValue(tokenCounts[1][0]?.count);
+  const completedCycles = cursor.completedCycles;
+  const scannedInCycle = Math.min(trackedTokens, cursor.scannedInCycle);
+  const cycleProgressPct = trackedTokens > 0
+    ? Math.round((scannedInCycle / trackedTokens) * 100)
+    : 0;
 
-  const signalCount = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(signals)
-    .where(gte(signals.createdAt, windowStart));
-
-  const highRiskCount = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(signals)
-    .where(and(gte(signals.createdAt, windowStart), eq(signals.status, "ACTIVE")));
-
-  const volumeRow = await db
-    .select({ total: sql<number>`COALESCE(SUM(usd_value), 0)` })
-    .from(economicActions)
-    .where(and(gte(economicActions.timestamp, windowStart), eq(economicActions.actionType, "SWAP")));
-
-  // Postgres: bucket timestamptz values into UTC hours and return stable ISO text.
-  const hourExpr = sql<string>`to_char(
-    date_trunc('hour', ${economicActions.timestamp} AT TIME ZONE 'UTC'),
-    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
-  )`;
-  const timelineRows = await db
-    .select({
-      hour: hourExpr,
-      bridgeIn: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'BRIDGE_IN' THEN usd_value ELSE 0 END), 0)`,
-      bridgeOut: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'BRIDGE_OUT' THEN usd_value ELSE 0 END), 0)`,
-      dexBuy: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'SWAP' AND usd_value >= 0 THEN usd_value ELSE 0 END), 0)`,
-      dexSell: sql<number>`COALESCE(SUM(CASE WHEN action_type = 'SWAP' AND usd_value < 0 THEN ABS(usd_value) ELSE 0 END), 0)`,
-    })
-    .from(economicActions)
-    .where(gte(economicActions.timestamp, windowStart))
-    .groupBy(hourExpr)
-    .orderBy(hourExpr);
-
-  const timeline = timelineRows.map((r) => ({
-    timestamp: toIso(r.hour) ?? new Date(0).toISOString(),
-    bridgeIn: Number(r.bridgeIn) || 0,
-    bridgeOut: Number(r.bridgeOut) || 0,
-    dexBuy: Number(r.dexBuy) || 0,
-    dexSell: Number(r.dexSell) || 0,
+  const rawLeaders = leadersResult.rows.map((row) => ({
+    address: row.token_address,
+    symbol: row.symbol,
+    name: row.name,
+    transferCount: numberValue(row.current_transfers),
+    previousTransferCount: numberValue(row.previous_transfers),
+    activeAddresses: numberValue(row.active_addresses),
+    holderCount: row.holder_count == null ? null : numberValue(row.holder_count),
+    holderDelta: row.holder_delta == null ? null : numberValue(row.holder_delta),
+    latestBlock: numberValue(row.latest_block),
+    lastTransferAt: toIso(row.last_transfer_at) ?? new Date(0).toISOString(),
+  }));
+  const maxTransfers = Math.max(0, ...rawLeaders.map((row) => row.transferCount));
+  const maxAddresses = Math.max(0, ...rawLeaders.map((row) => row.activeAddresses));
+  const topTokens: ActivityTokenRow[] = rawLeaders.map((row) => ({
+    ...row,
+    momentumPct: calculateMomentum(row.transferCount, row.previousTransferCount),
+    activityIndex: calculateActivityIndex(row.transferCount, row.activeAddresses, maxTransfers, maxAddresses),
+    evidence: buildActivityEvidence(row.transferCount, row.previousTransferCount, row.activeAddresses, row.holderDelta),
   }));
 
-  const compositionRows = await db
-    .select({ type: economicActions.actionType, total: sql<number>`COALESCE(SUM(usd_value), 0)` })
-    .from(economicActions)
-    .where(gte(economicActions.timestamp, windowStart))
-    .groupBy(economicActions.actionType);
-
-  const composition = compositionRows.map((r) => ({
-    name: r.type.replace(/_/g, " "),
-    value: Number(r.total) || 0,
-  }));
-
-  const lastSync = await db
-    .select()
-    .from(sourceSyncState)
-    .orderBy(sql`last_success_at DESC NULLS LAST`)
-    .limit(1);
-
-  const dexVolume = Number(volumeRow[0]?.total) || 0;
+  const lastIndexedAt = toIso(transferState?.lastSuccessAt);
+  const chain = parseChainStats(statsState?.cursor);
+  const lastUpdatedAt = [lastIndexedAt, toIso(statsState?.lastSuccessAt)]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? new Date(0).toISOString();
 
   return {
-    netCapitalInflow24h: timeline.reduce((acc, t) => acc + (t.bridgeIn - t.bridgeOut), 0),
-    activeWallets24h: Number(transferCount[0]?.count) || 0,
-    dexVolume24h: dexVolume,
-    usdgNetFlow24h: 0,
-    signals24h: Number(signalCount[0]?.count) || 0,
-    highRiskAlerts: Number(highRiskCount[0]?.count) || 0,
-    tokenCount: Number(tokenCount[0]?.count) || 0,
-    lastUpdatedAt: toIso(lastSync[0]?.lastSuccessAt) ?? new Date().toISOString(),
-    timeline,
-    composition,
+    window,
+    chain,
+    activity: {
+      transferEvents: numberValue(aggregate?.transfer_count),
+      activeAddresses: numberValue(aggregate?.active_addresses),
+      activeTokens: numberValue(aggregate?.active_tokens),
+      mintEvents: numberValue(aggregate?.mint_events),
+      burnEvents: numberValue(aggregate?.burn_events),
+      latestBlock: aggregate?.latest_block == null ? null : numberValue(aggregate.latest_block),
+      lastObservedAt: toIso(aggregate?.last_observed_at),
+    },
+    coverage: {
+      trackedTokens,
+      tokensWithStoredTransfers,
+      scannedInCycle,
+      completedCycles,
+      cycleProgressPct,
+      lastBatchSize: cursor.lastBatchSize,
+      lookbackHours: cursor.lookbackHours,
+      status: transferState?.status ?? "not-started",
+      lastIndexedAt,
+    },
+    timeline: timelineResult.rows.map((row) => ({
+      timestamp: toIso(row.bucket) ?? new Date(0).toISOString(),
+      transfers: numberValue(row.transfers),
+      activeAddresses: numberValue(row.active_addresses),
+      mints: numberValue(row.mints),
+      burns: numberValue(row.burns),
+    })),
+    topTokens,
+    recentTransfers: recentRows.map((row) => ({
+      ...row,
+      normalizedValue: row.normalizedValue ?? null,
+      kind: classifyTransfer(row.fromAddress, row.toAddress),
+      timestamp: toIso(row.timestamp) ?? new Date(0).toISOString(),
+    })),
+    dataQuality: {
+      scope: "Bounded rotating sample of canonical Robinhood Chain token transfers",
+      completeness: completedCycles > 0 ? "cycle-complete" : "partial",
+      syntheticExcluded: true,
+      note: "Counts are page-bounded Blockscout observations for tracked canonical tokens and may be lower bounds, not an exhaustive full-chain index.",
+    },
+    lastUpdatedAt,
   };
 }
 

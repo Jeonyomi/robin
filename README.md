@@ -1,250 +1,197 @@
-# 🦉 Robin — Robinhood Chain Opportunity Intelligence
+# Robin · Robinhood Chain Onchain Observatory
 
-Onchain investment intelligence terminal for Robinhood Chain (Chain ID `4663`).
+Robin collects free, publicly available Robinhood Chain data, stores the raw observations, and turns them into source-labeled descriptive analysis.
 
-> **"Where is money flowing on Robinhood Chain, and is that movement a real investment opportunity — risk-adjusted?"**
+> The product is an onchain research and screening dashboard. It does not provide investment advice, trade execution, or predictive signals.
 
-This is a **research/data intelligence tool**, not an investment advisory service. All UI language uses `Signal`, `Evidence`, `Risk`, and `Invalidation` framing.
+## Product question
 
-## 🎯 What This Does
+**What is changing on Robinhood Chain, where is observable activity concentrated, and what raw evidence supports that view?**
 
-Robinhood Chain launched July 1, 2026 as an Ethereum L2 (Arbitrum Orbit) featuring:
-- **202 Stock Tokens** (NVDA, GME, AAPL, etc.) trading 24/7
-- **$1.595B daily DEX volume** (Uniswap 96%)
-- **$738M DeFi TVL** (Morpho, Ethena, Maple)
-- **$85.1M daily Stock Token volume**
-- **ERC-4337 Account Abstraction** support
+Robin answers this in three layers:
 
-This dashboard answers:
+1. **Chain state**: public Blockscout network statistics.
+2. **Tracked assets**: Robinhood's canonical asset registry matched by contract address.
+3. **Observed activity**: page-bounded token transfers, participating addresses, mint/burn events, and window-over-window change.
 
-1. **Where is capital flowing?** — Bridge inflow, stablecoin movement, DEX volume
-2. **Is it real demand?** — Distinguish bots/airdrops from genuine adoption
-3. **Is there executable liquidity?** — Actual depth, not just displayed market cap
-4. **Are smart wallets accumulating?** — Whale/smart-money cohort tracking
-5. **Is this the canonical Stock Token?** — Verify against Robinhood's official registry
-6. **Is there a tradeable price divergence?** — DEX vs reference price with depth check
-7. **What are the risks?** — Contract, liquidity, concentration, identity scoring
+The dashboard keeps chain-wide statistics separate from the rotating tracked-token sample. Missing data remains unavailable rather than being replaced with synthetic values.
 
-## 🏗️ Architecture
+## Current free sources
 
-```
-Frontend (Next.js 16) → API Routes → Domain Logic → Neon Postgres
-                                                ↓
-                              Source Adapters → External APIs
-                              (Robinhood, Blockscout)
+| Source | Data used | Scope |
+|---|---|---|
+| Robinhood Assets API | Canonical asset IDs, symbols, contracts, multipliers, status | Public registry |
+| Robinhood Price API | Reference bid/ask observations | Canonical assets where available |
+| Robinhood Chain Blockscout direct API | Chain stats, token metadata/counters, token transfers | Free public endpoint |
+| Robinhood Chain RPC | Configured for future log-level validation | Not yet the primary indexer |
+
+Default Blockscout base URL:
+
+```text
+https://robinhoodchain.blockscout.com/api/v2
 ```
 
-- **Frontend**: Next.js App Router, React 19, Tailwind CSS, ECharts
-- **API**: Next.js Route Handlers (BFF pattern)
-- **Domain**: Canonical identity resolver, risk engine, opportunity scorer, signal generator
-- **Storage**: Neon Postgres via Vercel Marketplace with Drizzle ORM (10 tables)
-- **Sources**: Robinhood Assets API, Robinhood Price API, Blockscout REST API
-- **Deploy**: Vercel API/UI backed by Neon; optional Vercel Blob read fallback
+The multi-chain `api.blockscout.com` endpoint is not the default because anonymous requests can require an API key or payment.
 
-## 📊 Core Features
+## What the dashboard shows
 
-| Feature | Description |
-|---------|-------------|
-| **Chain Pulse** | Overview metrics: capital flow, active wallets, DEX volume, signals |
-| **Opportunity Radar** | Risk-adjusted leaderboard with filters (category, risk, liquidity, canonical) |
-| **Stock Token Radar** | Canonical identity verification + flow + relative value |
-| **Token Scanner** | New token discovery + contract risk + holder quality |
-| **Token Detail** | Full analysis with tabs: Overview, Flows, Signals, Risk, Transactions |
-| **Capital Flow** | Bridge inflow/outflow, USDG/WETH movement, destination tracking |
-| **Smart Money** | Wallet scoring, labels, PnL, win rate, accumulation tracking |
-| **Alerts** | Signal feed with type, confidence, evidence, and risk flags |
+### Overview
 
-## 🚀 Quick Start
+- Chain-wide total transactions, addresses, block height, block time, and gas snapshot
+- Stored transfer events in the selected window
+- Unique participating addresses and active tracked tokens
+- Current transfer-index rotation coverage and freshness
+- Hourly transfer and address participation trend
+- Activity leaders with evidence and direct explorer links
+- Latest raw transfer observations
 
-### Local Development
+### Asset Registry
+
+- Exact contract match against Robinhood's canonical registry
+- Blockscout holder observations and holder change when available
+- Metadata freshness and data completeness
+- Direct contract links
+
+### Transfer Activity
+
+- Transfer, mint, and burn event counts
+- Relative activity by token
+- Recent transaction evidence
+- Explicit lower-bound and coverage caveats
+
+### Activity Lens
+
+A descriptive relative index, not an investment score:
+
+```text
+Activity Index = 60% × relative transfer count
+               + 40% × relative unique addresses
+```
+
+The leader in each selected window anchors normalization. Scores are not comparable across different windows. Momentum and holder change are shown as separate evidence.
+
+## Collection design
+
+The hourly sync uses a bounded rotating collector:
+
+- 24 canonical tokens per run by default
+- Up to 6 recently active tokens added for more frequent observation
+- Up to 2 Blockscout pages per token
+- 50 transfers per page
+- 48-hour lookback cutoff
+- Concurrency limited to 4 workers
+- Deduplication by transaction hash + log index + token address
+
+At default settings, the 194-token registry receives an initial full rotation over approximately nine hourly runs. Page limits mean transfer totals can be lower bounds for very active tokens. The UI states this explicitly.
+
+Configurable limits:
 
 ```bash
-# Clone
-git clone https://github.com/Jeonyomi/robin.git
-cd robin
+TRANSFER_SYNC_BATCH_SIZE=24
+TRANSFER_SYNC_HOT_TOKENS=6
+TRANSFER_SYNC_MAX_PAGES=2
+TRANSFER_SYNC_LOOKBACK_HOURS=48
+METADATA_SYNC_BATCH_SIZE=50
+```
 
-# Install
+## Sync pipeline
+
+```text
+Robinhood canonical registry
+  → Blockscout chain stats
+  → rotating token metadata
+  → Robinhood reference prices
+  → real Blockscout token transfers
+  → holder-delta metrics
+  → Neon Postgres
+  → optional Vercel Blob fallback snapshot
+```
+
+Heuristic signal generation is not part of the default pipeline. Synthetic economic actions remain fail-closed and require explicit `ALLOW_SYNTHETIC_ACTIONS=true` opt-in for development-only runs.
+
+## Architecture
+
+```text
+Next.js dashboard and API routes
+                ↓
+      shared query layer
+                ↓
+         Neon Postgres
+                ↑
+ bounded local/scheduled indexer
+       ↙                  ↘
+Robinhood APIs     Blockscout direct API
+```
+
+- Next.js 16 / React 19 / Tailwind CSS / ECharts
+- Neon Postgres / Drizzle ORM
+- Vercel deployment
+- Optional Vercel Blob read fallback
+- Windows Task Scheduler for hourly collection
+
+## Local setup
+
+```bash
 pnpm install
-
-# Pull Neon/Vercel environment variables, or copy the template and fill them in
 vercel env pull .env
-# cp .env.example .env
-
-# Create/update the Neon Postgres schema
 pnpm db:migrate
-
-# One-time import of the existing local SQLite database (optional)
-pnpm db:import-sqlite -- data/robin.db
-
-# Sync current data into Neon Postgres
 pnpm sync
-
-# Run the dashboard
 pnpm dev
 ```
 
-### Environment Variables
+Targeted jobs:
 
 ```bash
-# Pooled Neon URL for the application and sync jobs
+pnpm sync:canonical
+pnpm sync:stats
+pnpm sync:metadata
+pnpm sync:prices
+pnpm sync:transfers
+pnpm sync:metrics
+```
+
+Database URLs:
+
+```bash
 DATABASE_URL="postgresql://...-pooler.../robin?sslmode=require"
-
-# Direct Neon URL preferred by Drizzle migrations
 DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
-
-# Pre-configured (defaults work)
-NEXT_PUBLIC_CHAIN_ID="4663"
-NEXT_PUBLIC_EXPLORER_URL="https://robinhoodchain.blockscout.com"
-ROBINHOOD_RPC_URL="https://rpc.mainnet.chain.robinhood.com"
-ROBINHOOD_ASSETS_API_URL="https://api.robinhood.com/rhj/assets"
-BLOCKSCOUT_API_BASE_URL="https://robinhoodchain.blockscout.com/api/v2"
 ```
 
-> Vercel and local sync jobs use the same Neon Postgres database. A JSON
-> snapshot in Vercel Blob is retained only as a read fallback.
+## Data integrity rules
 
-### Publish a fallback snapshot (optional)
+- Raw source identifiers are retained before aggregation.
+- Missing observations stay `null`; they are not converted to zero.
+- Synthetic activity is excluded from the operating path.
+- Collection status, source, scope, and freshness are visible in the UI.
+- Partial source failures are recorded as degraded state.
+- Snapshot publication is blocked when a required sync job fails.
+- Activity is not labeled as demand, volume, profit, or investment opportunity.
+
+## Known limitations
+
+- The transfer index is a rotating, page-bounded sample, not a full archival chain index.
+- Current transfer rows do not decode DEX swaps, bridge routes, or protocol intent.
+- Token amounts do not imply USD value.
+- Holder observations are point-in-time API snapshots.
+- Wallet ownership, PnL, and "smart money" labels are not asserted.
+- The dashboard is batch-updated rather than realtime.
+- The free Blockscout instance can rate-limit or temporarily fail.
+
+## Verification
 
 ```bash
-# One-time: Vercel dashboard → Storage → Create Blob store → copy token to .env
-#   BLOB_READ_WRITE_TOKEN="..."
-
-# Uploads a read-only fallback snapshot and prints its public URL
-pnpm publish:snapshot
-
-# 1) Optional: set that URL as SNAPSHOT_URL to override the default below.
-# 2) `pnpm sync` auto-publishes a fresh snapshot when the Blob token is set.
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+pnpm db:check
 ```
 
-The public Blob URL is baked into the deployed code as a fallback. Normal API
-reads use Neon whenever `DATABASE_URL` is configured. Set `SNAPSHOT_URL` only
-if the Blob store changes.
+UI E2E is intentionally kept to a single final core smoke run after static checks.
 
-### Generate Secrets
+## Documentation
 
-```bash
-openssl rand -hex 32
-```
-
-## 📁 Project Structure
-
-```
-robin/
-├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── page.tsx            # Chain Pulse overview
-│   │   ├── opportunities/      # Opportunity Radar
-│   │   ├── stock-tokens/       # Stock Token Radar
-│   │   ├── tokens/             # Token Scanner + Detail
-│   │   ├── capital-flow/       # Bridge & DEX flow
-│   │   ├── smart-money/        # Wallet tracking
-│   │   ├── alerts/             # Signal feed
-│   │   ├── api/v1/             # REST API endpoints
-│   │   ├── api/admin/sync/     # Admin sync jobs
-│   │   └── api/cron/           # Scheduled maintenance
-│   ├── db/schema/              # Postgres Drizzle ORM schema (10 tables)
-│   ├── lib/
-│   │   ├── config/             # Env validation, constants
-│   │   ├── db/                 # Lazy DB connection
-│   │   ├── domain/             # Business logic engines
-│   │   ├── jobs/               # Sync job runners
-│   │   └── sources/            # External API adapters
-│   └── components/ui/          # Reusable UI components
-├── docs/                       # Documentation
-│   ├── architecture.md
-│   ├── metrics.md
-│   ├── signals.md
-│   └── deployment.md
-├── vercel.json                 # Vercel config (daily cron)
-├── drizzle.config.ts           # Neon Postgres migration config
-└── .env.example                # Environment template
-```
-
-## 🔄 Data Sync Strategy
-
-### Full Sync (Windows Task Scheduler or manual)
-
-Runs the six jobs sequentially and writes directly to Neon Postgres:
-canonical → metadata → prices → metrics → actions → signals. When
-`BLOB_READ_WRITE_TOKEN` is configured, it also refreshes the fallback snapshot.
-
-### Daily Maintenance (Vercel Cron)
-Runs at 03:17 UTC via Vercel Cron:
-1. Sync Robinhood canonical asset registry
-2. Check source health (Robinhood API, Blockscout)
-3. Stale metadata refresh
-4. Bounded metric recalculation
-
-### On-Demand Refresh (User-triggered)
-Scoped refresh with cooldown:
-- **5 min** cooldown per scope (token, opportunity)
-- **Bounded** batch processing (no full-chain scans)
-- **DB-level deduplication** prevents concurrent duplicates
-
-### Admin Sync (Manual)
-Protected by `ADMIN_SYNC_SECRET`:
-```bash
-curl -X POST "https://your-app.vercel.app/api/admin/sync/canonical-assets" \
-  -H "Authorization: Bearer $ADMIN_SYNC_SECRET"
-```
-
-## 🧪 Key Signals
-
-| Signal | Description |
-|--------|-------------|
-| `SMART_ACCUMULATION` | Smart money + growing holders + stable liquidity |
-| `CAPITAL_ROTATION` | Bridge inflow → specific token/protocol |
-| `NEW_TOKEN_BREAKOUT` | New token with genuine adoption (not bot) |
-| `STOCK_TOKEN_DIVERGENCE` | DEX price diverges from reference with depth |
-| `FAKE_MOMENTUM_WARNING` | Artificial momentum (sybil, wash, bot) |
-| `TICKER_COLLISION` | Non-canonical token using stock-like ticker |
-
-## ⚠️ Known Limitations
-
-- **Hobby plan**: 1 cron job/day, 60s function timeout
-- **No realtime**: Data is scheduled/batch-based, not streaming
-- **No auth**: Watchlist is localStorage-based (P0)
-- **Partial protocol decoding**: Only SWAP, BRIDGE, MINT/BURN in P0
-- **No backtest**: Signal validation framework planned for P1
-
-## 📚 Documentation
-
-- [Architecture](docs/architecture.md) — System design and data flow
-- [Metrics](docs/metrics.md) — All metric definitions and formulas
-- [Signals](docs/signals.md) — Signal types, conditions, and scoring
-- [Deployment](docs/deployment.md) — Vercel + Neon setup guide
-
-## 📈 Roadmap
-
-### P0 (Current) ✅
-- [x] Canonical identity resolver
-- [x] Stock Token Radar with canonical badges
-- [x] Risk engine (6 components, 5 hard gates)
-- [x] Opportunity scoring (6 weighted factors)
-- [x] Signal engine (6 signal types)
-- [x] 8 dashboard pages
-- [x] 12 API endpoints
-- [x] Vercel deployment config
-
-### P1 (Next)
-- [ ] Uniswap pool analytics
-- [ ] LP opportunity scoring
-- [ ] Wallet PnL model
-- [ ] Corporate action timeline
-- [ ] Telegram/Discord alerts
-- [ ] Signal backtest UI
-
-### P2 (Future)
-- [ ] Perps activity tracking
-- [ ] Cross-chain wallet identity
-- [ ] Agent/AA cohort intelligence
-- [ ] Custom quant formula builder
-- [ ] API product + team workspaces
-
-## 📄 License
-
-Personal research use. Not financial advice.
-
----
-
-Built for the Robinhood Chain ecosystem. Data is sourced from public on-chain records and official Robinhood APIs.
+- [Architecture](docs/architecture.md)
+- [Metrics](docs/metrics.md)
+- [Signals](docs/signals.md)
+- [Deployment](docs/deployment.md)

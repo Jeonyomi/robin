@@ -14,7 +14,8 @@ export async function GET(request: Request) {
         entityId: entityId || null,
         confidence: confidence || null,
         lastUpdatedAt: new Date().toISOString(),
-        note: "Signals will appear after metric calculation runs.",
+        status: "disabled",
+        note: "Heuristic signals are outside the operating path until validated against decoded real events.",
       },
     });
   } catch (error) {

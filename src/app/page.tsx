@@ -1,223 +1,213 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { FlowTimelineChart, type FlowTimelinePoint } from "@/components/charts/flow-timeline";
-import { ActivityCompositionChart, type ActivityCompositionItem } from "@/components/charts/activity-composition";
+import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
+import type { OverviewData } from "@/lib/queries";
 
-type OverviewData = {
-  netCapitalInflow24h: number;
-  activeWallets24h: number;
-  dexVolume24h: number;
-  usdgNetFlow24h: number;
-  signals24h: number;
-  highRiskAlerts: number;
-  tokenCount: number;
-  lastUpdatedAt: string;
-  timeline: FlowTimelinePoint[];
-  composition: ActivityCompositionItem[];
-};
+const WINDOWS = ["1h", "6h", "24h", "7d"];
 
-function MetricCard({ title, value, subtitle, trend, link }: {
-  title: string;
-  value: string;
-  subtitle?: string;
-  trend?: "positive" | "negative" | "neutral";
-  link?: string;
-}) {
-  const content = (
-    <Card className={link ? "hover:border-primary/50 transition-colors" : ""}>
-      <CardHeader className="pb-1">
-        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-        {trend && (
-          <div className="mt-1">
-            <Badge
-              variant={trend === "positive" ? "default" : trend === "negative" ? "destructive" : "secondary"}
-              className="text-xs"
-            >
-              {trend === "positive" ? "↑ Inflow" : trend === "negative" ? "↓ Outflow" : "—"}
-            </Badge>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  if (link) {
-    return <Link href={link}>{content}</Link>;
-  }
-  return content;
+function compact(value: number | null | undefined) {
+  if (value == null) return "Not observed";
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-function formatUsd(value: number) {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+function relativeTime(value: string | null | undefined) {
+  if (!value) return "Not indexed";
+  const delta = Date.now() - new Date(value).getTime();
+  if (delta < 60_000) return "less than a minute ago";
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return new Date(value).toLocaleString();
+}
+
+function address(value: string) {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function Metric({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <div className="metric-block">
+      <p className="metric-label">{label}</p>
+      <p className="metric-value">{value}</p>
+      <p className="metric-note">{note}</p>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
+  const [window, setWindow] = useState("24h");
   const [data, setData] = useState<OverviewData | null>(null);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/overview")
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json.data);
-        setLoading(false);
+    fetch(`/api/v1/overview?window=${window}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Overview request failed");
+        return response.json();
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .then((payload) => {
+        if (!payload.data?.activity || !payload.data?.coverage) throw new Error("No current observation is available");
+        setData(payload.data);
+        setError(false);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [window]);
+
+  const hasObservations = Boolean(data?.activity?.transferEvents);
 
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Chain Pulse</h1>
-          <p className="text-muted-foreground mt-1">
-            Robinhood Chain · Chain ID 4663 · Last indexed:{" "}
-            {data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : "Not yet indexed"}
+    <div className="page-shell">
+      <section className="hero-grid">
+        <div>
+          <p className="eyebrow">ROBIN / ONCHAIN OBSERVATORY</p>
+          <h1 className="hero-title">What is moving on<br />Robinhood Chain?</h1>
+          <p className="hero-copy">
+            Public chain statistics and canonical-token transfers, collected from free endpoints and separated from interpretation.
           </p>
-        </header>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          <MetricCard
-            title="Net Capital Inflow"
-            value={formatUsd(data?.netCapitalInflow24h || 0)}
-            subtitle="24h"
-            trend={(data?.netCapitalInflow24h || 0) > 0 ? "positive" : "neutral"}
-          />
-          <MetricCard
-            title="Active Wallets"
-            value={(data?.activeWallets24h || 0).toLocaleString()}
-            subtitle="24h"
-          />
-          <MetricCard
-            title="DEX Volume"
-            value={formatUsd(data?.dexVolume24h || 0)}
-            subtitle="24h"
-          />
-          <MetricCard
-            title="USDG Flow"
-            value={formatUsd(data?.usdgNetFlow24h || 0)}
-            subtitle="24h"
-          />
-          <MetricCard
-            title="Signals"
-            value={(data?.signals24h || 0).toString()}
-            subtitle="24h"
-            link="/alerts"
-          />
-          <MetricCard
-            title="Risk Alerts"
-            value={(data?.highRiskAlerts || 0).toString()}
-            subtitle="Active"
-            trend={data?.highRiskAlerts ? "negative" : "neutral"}
-            link="/alerts"
-          />
         </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Capital Flow Timeline</CardTitle>
-              <p className="text-xs text-muted-foreground">Bridge in/out and DEX buy/sell by hour</p>
-            </CardHeader>
-            <CardContent>
-              <FlowTimelineChart data={data?.timeline || []} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity Composition</CardTitle>
-              <p className="text-xs text-muted-foreground">Economic actions by type</p>
-            </CardHeader>
-            <CardContent>
-              <ActivityCompositionChart data={data?.composition || []} />
-            </CardContent>
-          </Card>
+        <div className="hero-status">
+          <div className="status-line">
+            <span className={`status-dot ${data?.coverage.status === "success" ? "status-dot-live" : "status-dot-warn"}`} />
+            <span>Blockscout direct API</span>
+            <strong>{data?.coverage.status ?? "checking"}</strong>
+          </div>
+          <div className="status-line">
+            <span className="status-key">LAST INDEX</span>
+            <strong>{relativeTime(data?.coverage.lastIndexedAt)}</strong>
+          </div>
+          <div className="status-line">
+            <span className="status-key">METHOD</span>
+            <strong>Bounded rotating sample</strong>
+          </div>
         </div>
+      </section>
 
-        {/* Quick access panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <Link href="/opportunities">
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span>🎯</span> Opportunity Radar
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Risk-adjusted opportunity leaderboard across all tracked assets.
-                  Filter by category, risk, and liquidity.
-                </p>
-                <Badge variant="outline" className="mt-3">Open →</Badge>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/stock-tokens">
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span>📈</span> Stock Token Radar
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Canonical identity verification + flow + relative value analysis
-                  for Robinhood Stock Tokens.
-                </p>
-                <Badge variant="outline" className="mt-3">Open →</Badge>
-              </CardContent>
-            </Card>
-          </Link>
+      <div className="toolbar">
+        <div className="window-tabs" aria-label="Observation window">
+          {WINDOWS.map((item) => (
+            <button key={item} className={window === item ? "active" : ""} onClick={() => setWindow(item)}>
+              {item}
+            </button>
+          ))}
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Link href="/capital-flow">
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span>💰</span> Capital Flow
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Bridge inflow/outflow, USDG movement, and destination tracking.
-                </p>
-                <Badge variant="outline" className="mt-3">Open →</Badge>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/smart-money">
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span>🧠</span> Smart Money
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Wallet scoring, accumulation tracking, and smart cohort analysis.
-                </p>
-                <Badge variant="outline" className="mt-3">Open →</Badge>
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
+        <p>{loading ? "Refreshing observation…" : `Window ending ${relativeTime(data?.activity.lastObservedAt)}`}</p>
       </div>
+
+      {error ? (
+        <div className="empty-state">The latest observation could not be loaded. Check Data Sources for source health.</div>
+      ) : (
+        <>
+          <section className="metric-grid" aria-label="Observed activity summary">
+            <Metric label="TRANSFER EVENTS" value={compact(data?.activity.transferEvents)} note={`Stored observations / ${window}`} />
+            <Metric label="ACTIVE ADDRESSES" value={compact(data?.activity.activeAddresses)} note="Unique senders and recipients" />
+            <Metric label="ACTIVE TOKENS" value={compact(data?.activity.activeTokens)} note={`Of ${compact(data?.coverage.trackedTokens)} tracked canonical assets`} />
+            <Metric label="CHAIN TRANSACTIONS" value={compact(data?.chain?.totalTransactions)} note="Chain-wide / Blockscout" />
+          </section>
+
+          <section className="scope-banner">
+            <div>
+              <span className="scope-label">OBSERVATION COVERAGE</span>
+              <strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Full initial registry coverage" : `${data?.coverage.cycleProgressPct ?? 0}% of initial rotation`}</strong>
+              <p>{data?.coverage.completedCycles ?? 0} full cycles · {data?.coverage.scannedInCycle ?? 0} of {data?.coverage.trackedTokens ?? 0} tokens in the current cycle.</p>
+            </div>
+            <div className="coverage-track" aria-label={`${data?.coverage.cycleProgressPct ?? 0}% coverage`}>
+              <span style={{ width: `${(data?.coverage.completedCycles ?? 0) > 0 ? 100 : data?.coverage.cycleProgressPct ?? 0}%` }} />
+            </div>
+            <p className="scope-note">{data?.dataQuality.note ?? "Waiting for the first transfer-index cycle."}</p>
+          </section>
+
+          <section className="dashboard-grid">
+            <article className="panel panel-wide">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">ACTIVITY OVER TIME</p>
+                  <h2>Transfers and participating addresses</h2>
+                </div>
+                <span className="method-chip">Observed · not estimated</span>
+              </div>
+              <ActivityTimelineChart data={data?.timeline ?? []} />
+            </article>
+
+            <article className="panel chain-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">CHAIN STATE</p>
+                  <h2>Public network snapshot</h2>
+                </div>
+              </div>
+              <dl className="chain-list">
+                <div><dt>Block height</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
+                <div><dt>Total addresses</dt><dd>{compact(data?.chain?.totalAddresses)}</dd></div>
+                <div><dt>Average block time</dt><dd>{data?.chain?.averageBlockTimeMs != null ? `${data.chain.averageBlockTimeMs.toFixed(0)} ms` : "Not observed"}</dd></div>
+                <div><dt>Fast gas</dt><dd>{data?.chain?.gasPricesGwei?.fast != null ? `${data.chain.gasPricesGwei.fast} Gwei` : "Not observed"}</dd></div>
+                <div><dt>Latest tracked block</dt><dd>{data?.activity.latestBlock?.toLocaleString() ?? "Not observed"}</dd></div>
+              </dl>
+              <a className="text-link" href="https://robinhoodchain.blockscout.com" target="_blank" rel="noreferrer">Open source explorer ↗</a>
+            </article>
+          </section>
+
+          <section className="panel leaders-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="section-kicker">ACTIVITY LENS</p>
+                <h2>Tokens drawing observable attention</h2>
+                <p>Ranked only by transfer count and unique addresses within the selected window.</p>
+              </div>
+              <Link className="text-link" href="/opportunities">View methodology and all leaders →</Link>
+            </div>
+
+            {!hasObservations ? (
+              <div className="empty-state">No stored transfers in this window. Run the transfer indexer or choose a wider window.</div>
+            ) : (
+              <div className="leader-list">
+                {data?.topTokens.slice(0, 6).map((token, index) => (
+                  <Link href={`/tokens/${token.address}`} className="leader-row" key={token.address}>
+                    <span className="leader-rank">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="leader-asset"><strong>{token.symbol || "Unknown"}</strong><small>{token.name || address(token.address)}</small></span>
+                    <span className="leader-evidence"><strong>{compact(token.transferCount)} transfers</strong><small>{compact(token.activeAddresses)} addresses · {token.evidence[1]}</small></span>
+                    <span className="leader-index"><small>Activity index</small><strong>{token.activityIndex}</strong></span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="panel recent-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="section-kicker">RAW EVIDENCE</p>
+                <h2>Latest indexed transfers</h2>
+              </div>
+              <Link className="text-link" href="/capital-flow">Explore transfer activity →</Link>
+            </div>
+            <div className="transfer-table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Token</th><th>Type</th><th>From</th><th>To</th><th>Block</th><th>Observed</th></tr></thead>
+                <tbody>
+                  {(data?.recentTransfers ?? []).slice(0, 8).map((transfer) => (
+                    <tr key={`${transfer.txHash}:${transfer.logIndex}`}>
+                      <td><strong>{transfer.symbol || address(transfer.tokenAddress)}</strong></td>
+                      <td><span className={`event-pill event-${transfer.kind}`}>{transfer.kind}</span></td>
+                      <td className="mono">{address(transfer.fromAddress)}</td>
+                      <td className="mono">{address(transfer.toAddress)}</td>
+                      <td><a href={`https://robinhoodchain.blockscout.com/tx/${transfer.txHash}`} target="_blank" rel="noreferrer">{transfer.blockNumber.toLocaleString()} ↗</a></td>
+                      <td>{relativeTime(transfer.timestamp)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!data?.recentTransfers?.length && <div className="empty-state">No raw transfer evidence stored for this window.</div>}
+            </div>
+          </section>
+
+          <footer className="method-footer">
+            <strong>Reading rule:</strong> Activity is not demand, transfer count is not volume, and this dashboard is not investment advice. Every number is labeled by scope and source.
+          </footer>
+        </>
+      )}
     </div>
   );
 }

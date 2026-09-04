@@ -6,7 +6,8 @@ export async function GET() {
       data: [],
       meta: {
         lastUpdatedAt: new Date().toISOString(),
-        note: "Smart money wallets will appear after wallet feature scoring runs.",
+        status: "disabled",
+        note: "Wallet intelligence is not asserted without decoded trades, validated prices, and attribution evidence.",
       },
     });
   } catch (error) {

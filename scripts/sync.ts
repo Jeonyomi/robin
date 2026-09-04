@@ -5,15 +5,19 @@
  * Usage:
  *   pnpm sync            # all jobs
  *   pnpm sync canonical  # Robinhood /rhj/assets registry
- *   pnpm sync metadata   # Blockscout token metadata for canonical tokens
+ *   pnpm sync stats      # Blockscout chain-wide public statistics
+ *   pnpm sync metadata   # rotating Blockscout token metadata batch
  *   pnpm sync prices     # Robinhood reference prices
- *   pnpm sync metrics    # compute metric snapshots + signals from DB
+ *   pnpm sync transfers  # bounded real token-transfer ingestion
+ *   pnpm sync metrics    # compute holder deltas from source observations
  *   pnpm sync watch      # run all jobs on an interval (5 min)
  */
 import "dotenv/config";
 import { syncCanonicalAssets } from "@/lib/jobs/sync-canonical-assets";
+import { syncChainStats } from "@/lib/jobs/sync-chain-stats";
 import { syncTokenMetadata } from "@/lib/jobs/sync-token-metadata";
 import { syncReferencePrices } from "@/lib/jobs/sync-reference-prices";
+import { syncTokenTransfers } from "@/lib/jobs/sync-token-transfers";
 import { calculateTokenMetrics } from "@/lib/jobs/calculate-metrics";
 import { generateEconomicActions } from "@/lib/jobs/generate-economic-actions";
 import { generateSignals } from "@/lib/jobs/generate-signals";
@@ -31,11 +35,17 @@ async function run(jobName: string): Promise<boolean> {
       case "canonical":
         result = await syncCanonicalAssets();
         break;
+      case "stats":
+        result = await syncChainStats();
+        break;
       case "metadata":
         result = await syncTokenMetadata();
         break;
       case "prices":
         result = await syncReferencePrices();
+        break;
+      case "transfers":
+        result = await syncTokenTransfers();
         break;
       case "metrics":
         result = await calculateTokenMetrics();
@@ -68,15 +78,17 @@ async function main() {
   if (job === "all" || job === "watch") {
     const jobs = [
       "canonical",
+      "stats",
       "metadata",
       "prices",
+      "transfers",
       "metrics",
       ...(allowSyntheticActions ? ["actions"] : []),
-      "signals",
     ];
     if (!allowSyntheticActions) {
       console.log("ℹ synthetic economic actions skipped (fail-closed default)");
     }
+    console.log("ℹ heuristic signals skipped in the default sync; the dashboard uses observed activity only");
     let allSucceeded = true;
     for (const j of jobs) {
       if (!(await run(j))) allSucceeded = false;

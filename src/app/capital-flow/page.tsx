@@ -1,188 +1,120 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
+import type { OverviewData } from "@/lib/queries";
 
-type CapitalFlowData = {
-  bridgeInflow: number;
-  bridgeOutflow: number;
-  netFlow: number;
-  usdgFlow: number;
-  wethFlow: number;
-  topDestinations: Array<{
-    symbol: string;
-    address: string;
-    flowUsd: number;
-    type: string;
-  }>;
-  timeline: Array<{
-    timestamp: string;
-    bridgeIn: number;
-    bridgeOut: number;
-    dexBuy: number;
-    dexSell: number;
-  }>;
-};
+const WINDOWS = ["1h", "6h", "24h", "7d"];
 
-function formatUsd(value: number) {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+function compact(value: number | null | undefined) {
+  if (value == null) return "Not observed";
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-export default function CapitalFlowPage() {
-  const [data, setData] = useState<CapitalFlowData | null>(null);
-  const [loading, setLoading] = useState(true);
+function shortAddress(value: string) {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function relativeTime(value: string | null | undefined) {
+  if (!value) return "Not indexed";
+  const delta = Date.now() - new Date(value).getTime();
+  if (delta < 60_000) return "<1m ago";
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return new Date(value).toLocaleString();
+}
+
+export default function TransferActivityPage() {
   const [window, setWindow] = useState("24h");
+  const [data, setData] = useState<OverviewData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch(`/api/v1/capital-flow?window=${window}`)
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json.data);
-        setLoading(false);
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!payload.data?.activity || !payload.data?.coverage) throw new Error("No current observation is available");
+        setData(payload.data);
       })
-      .catch(() => setLoading(false));
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
   }, [window]);
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold">Capital Flow</h1>
-          <p className="text-muted-foreground mt-2">
-            Bridge → Stablecoin → DEX → Protocol flow analysis
-          </p>
-        </header>
-
-        {/* Window selector */}
-        <div className="flex gap-2 mb-6">
-          {["1h", "6h", "24h", "7d"].map((w) => (
-            <button
-              key={w}
-              onClick={() => setWindow(w)}
-              className={`px-3 py-1.5 rounded-md text-sm ${
-                window === w ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
-              }`}
-            >
-              {w}
-            </button>
-          ))}
+    <div className="page-shell">
+      <header className="section-hero">
+        <div>
+          <p className="eyebrow">RAW ONCHAIN OBSERVATIONS</p>
+          <h1>Transfer Activity</h1>
+          <p>Canonical-token movements indexed from Blockscout. No inferred DEX direction or fabricated USD flow.</p>
         </div>
+        <div className="window-tabs">
+          {WINDOWS.map((item) => <button key={item} className={window === item ? "active" : ""} onClick={() => setWindow(item)}>{item}</button>)}
+        </div>
+      </header>
 
-        {loading ? (
-          <p className="text-muted-foreground py-8 text-center">Loading capital flow data...</p>
-        ) : (
-          <>
-            {/* Flow KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">Bridge Inflow</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-green-500">{formatUsd(data?.bridgeInflow || 0)}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">Bridge Outflow</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-red-500">{formatUsd(data?.bridgeOutflow || 0)}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">Net Flow</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className={`text-2xl font-bold ${(data?.netFlow || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatUsd(data?.netFlow || 0)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">USDG Net Flow</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{formatUsd(data?.usdgFlow || 0)}</p>
-                </CardContent>
-              </Card>
-            </div>
+      <section className="metric-grid metric-grid-five">
+        <div className="metric-block"><p className="metric-label">TRANSFERS</p><p className="metric-value">{compact(data?.activity.transferEvents)}</p><p className="metric-note">Stored events / {window}</p></div>
+        <div className="metric-block"><p className="metric-label">ADDRESSES</p><p className="metric-value">{compact(data?.activity.activeAddresses)}</p><p className="metric-note">Unique participants</p></div>
+        <div className="metric-block"><p className="metric-label">TOKENS</p><p className="metric-value">{compact(data?.activity.activeTokens)}</p><p className="metric-note">Observed in window</p></div>
+        <div className="metric-block"><p className="metric-label">MINT EVENTS</p><p className="metric-value">{compact(data?.activity.mintEvents)}</p><p className="metric-note">From zero address</p></div>
+        <div className="metric-block"><p className="metric-label">BURN EVENTS</p><p className="metric-value">{compact(data?.activity.burnEvents)}</p><p className="metric-note">To zero address</p></div>
+      </section>
 
-            {/* Flow Timeline */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Capital Flow Timeline</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data?.timeline && data.timeline.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="p-2 text-left">Time</th>
-                          <th className="p-2 text-right">Bridge In</th>
-                          <th className="p-2 text-right">Bridge Out</th>
-                          <th className="p-2 text-right">DEX Buy</th>
-                          <th className="p-2 text-right">DEX Sell</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.timeline.map((t, i) => (
-                          <tr key={i} className="border-b">
-                            <td className="p-2">{new Date(t.timestamp).toLocaleTimeString()}</td>
-                            <td className="p-2 text-right text-green-500">{formatUsd(t.bridgeIn)}</td>
-                            <td className="p-2 text-right text-red-500">{formatUsd(t.bridgeOut)}</td>
-                            <td className="p-2 text-right text-green-500">{formatUsd(t.dexBuy)}</td>
-                            <td className="p-2 text-right text-red-500">{formatUsd(t.dexSell)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-muted-foreground mb-2">No flow data available yet</p>
-                    <p className="text-sm text-muted-foreground">
-                      Bridge events will populate this timeline after on-chain ingestion.
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+      <section className="scope-banner compact-scope">
+        <div><span className="scope-label">SCOPE</span><strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Full initial registry coverage" : `${data?.coverage.cycleProgressPct ?? 0}% initial coverage`}</strong></div>
+        <div className="coverage-track"><span style={{ width: `${(data?.coverage.completedCycles ?? 0) > 0 ? 100 : data?.coverage.cycleProgressPct ?? 0}%` }} /></div>
+        <p className="scope-note">Last indexed {relativeTime(data?.coverage.lastIndexedAt)}. {data?.dataQuality.note}</p>
+      </section>
 
-            {/* Top Destinations */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Capital Destinations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data?.topDestinations && data.topDestinations.length > 0 ? (
-                  <div className="space-y-2">
-                    {data.topDestinations.map((dest) => (
-                      <div key={dest.address} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <span className="font-medium">{dest.symbol}</span>
-                          <Badge variant="outline" className="ml-2 text-xs">{dest.type}</Badge>
-                        </div>
-                        <span className="font-mono text-sm">{formatUsd(dest.flowUsd)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">No destination data available yet</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
+      <section className="panel">
+        <div className="panel-heading"><div><p className="section-kicker">HOURLY VIEW</p><h2>Transfer events and unique addresses</h2></div><span className="method-chip">{loading ? "Loading" : "Observed"}</span></div>
+        <ActivityTimelineChart data={data?.timeline ?? []} />
+      </section>
+
+      <section className="panel leaders-panel">
+        <div className="panel-heading"><div><p className="section-kicker">TOKEN COMPARISON</p><h2>Most active tracked assets</h2><p>Activity Index is relative within this result set: 60% transfer count, 40% unique addresses.</p></div></div>
+        <div className="transfer-table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Asset</th><th>Activity index</th><th>Transfers</th><th>Addresses</th><th>vs prior window</th><th>Latest block</th></tr></thead>
+            <tbody>
+              {(data?.topTokens ?? []).map((token) => (
+                <tr key={token.address}>
+                  <td><strong>{token.symbol || "Unknown"}</strong><small className="table-sub">{token.name || shortAddress(token.address)}</small></td>
+                  <td><span className="score-cell"><i style={{ width: `${token.activityIndex}%` }} /> <b>{token.activityIndex}</b></span></td>
+                  <td>{token.transferCount.toLocaleString()}</td>
+                  <td>{token.activeAddresses.toLocaleString()}</td>
+                  <td>{token.momentumPct == null ? "Newly observed" : `${token.momentumPct > 0 ? "+" : ""}${token.momentumPct.toFixed(0)}%`}</td>
+                  <td><a href={`https://robinhoodchain.blockscout.com/block/${token.latestBlock}`} target="_blank" rel="noreferrer">{token.latestBlock.toLocaleString()} ↗</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!data?.topTokens?.length && <div className="empty-state">No activity observed in this window.</div>}
+        </div>
+      </section>
+
+      <section className="panel recent-panel">
+        <div className="panel-heading"><div><p className="section-kicker">EVIDENCE LOG</p><h2>Recent transfers</h2></div></div>
+        <div className="transfer-table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Time</th><th>Token</th><th>Event</th><th>From</th><th>To</th><th>Amount</th><th>Transaction</th></tr></thead>
+            <tbody>
+              {(data?.recentTransfers ?? []).map((transfer) => (
+                <tr key={`${transfer.txHash}:${transfer.logIndex}`}>
+                  <td>{relativeTime(transfer.timestamp)}</td>
+                  <td><strong>{transfer.symbol || shortAddress(transfer.tokenAddress)}</strong></td>
+                  <td><span className={`event-pill event-${transfer.kind}`}>{transfer.kind}</span></td>
+                  <td className="mono">{shortAddress(transfer.fromAddress)}</td>
+                  <td className="mono">{shortAddress(transfer.toAddress)}</td>
+                  <td>{transfer.normalizedValue == null ? "Not parsed" : compact(transfer.normalizedValue)}</td>
+                  <td><a href={`https://robinhoodchain.blockscout.com/tx/${transfer.txHash}`} target="_blank" rel="noreferrer">{shortAddress(transfer.txHash)} ↗</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

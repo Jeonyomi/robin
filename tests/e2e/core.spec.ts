@@ -6,12 +6,12 @@ import { test, expect } from "@playwright/test";
 // UI structure (canonical badges, empty states, source health) is correct.
 
 test.describe("Dashboard navigation", () => {
-  test("overview loads with Chain Pulse header", async ({ page }) => {
+  test("overview loads with the onchain observation header", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Chain Pulse" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /What is moving on Robinhood Chain/ })).toBeVisible();
     // Sidebar nav present
-    await expect(page.getByText("Opportunity Radar", { exact: true })).toBeVisible();
-    await expect(page.getByText("Stock Token Radar", { exact: true })).toBeVisible();
+    await expect(page.getByText("Activity Lens", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Asset Registry", { exact: true }).first()).toBeVisible();
   });
 
   test("all main pages render without crashing", async ({ page }) => {
@@ -25,23 +25,23 @@ test.describe("Dashboard navigation", () => {
 
   test("sidebar navigation links work", async ({ page }) => {
     await page.goto("/");
-    await page.getByText("Opportunity Radar", { exact: true }).click();
+    await page.getByText("Activity Lens", { exact: true }).first().click();
     await expect(page).toHaveURL(/\/opportunities/);
-    await expect(page.getByRole("heading", { name: "Opportunity Radar" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activity Lens" })).toBeVisible();
   });
 });
 
-test.describe("Stock Token Radar", () => {
+test.describe("Asset Registry", () => {
   test("shows canonical legend and correct empty state", async ({ page }) => {
     await page.goto("/stock-tokens");
-    await expect(page.getByRole("heading", { name: "Stock Token Radar" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Asset Registry" })).toBeVisible();
     // Legend explaining canonical status
     await expect(page.getByText(/Canonical.*registry/i)).toBeVisible();
   });
 
   test("canonical-only filter toggle renders", async ({ page }) => {
     await page.goto("/stock-tokens");
-    await expect(page.getByLabel("Canonical Only")).toBeVisible();
+    await expect(page.getByLabel(/Canonical only/i)).toBeVisible();
   });
 });
 

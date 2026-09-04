@@ -1,171 +1,88 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useState } from "react";
 
 type StockToken = {
   address: string;
   symbol: string;
   name: string | null;
   canonicalStatus: string;
-  canonicalAsset: {
-    id: string;
-    symbol: string;
-    multiplier: string | null;
-    status: string;
-  } | null;
-  metrics: {
-    holderCount: number | null;
-    holderDelta: number | null;
-    uniqueBuyers: number | null;
-    netFlowUsd: string | null;
-    liquidityUsd: string | null;
-    volumeUsd: string | null;
-    depth1pctUsd: string | null;
-    dataCompleteness: number | null;
-  } | null;
+  canonicalAsset: { multiplier: string | null; status: string } | null;
+  metrics: { holderCount: number | null; holderDelta: number | null; dataCompleteness: number | null } | null;
   lastSeenAt: string;
 };
 
-function CanonicalBadge({ status }: { status: string }) {
-  if (status === "CANONICAL") {
-    return <Badge className="bg-green-600 text-xs">✓ Canonical</Badge>;
-  }
-  if (status === "NON_CANONICAL") {
-    return <Badge variant="destructive" className="text-xs">⚠ Non-Canonical</Badge>;
-  }
-  if (status === "TICKER_COLLISION") {
-    return <Badge variant="destructive" className="text-xs">⚠ Ticker Collision</Badge>;
-  }
-  return <Badge variant="secondary" className="text-xs">Unknown</Badge>;
+function shortAddress(value: string) {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function formatAddress(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+function relativeTime(value: string) {
+  const delta = Date.now() - new Date(value).getTime();
+  if (delta < 3_600_000) return `${Math.max(1, Math.floor(delta / 60_000))}m ago`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
-function formatUsd(value: string | number | null) {
-  if (value === null) return "—";
-  const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return "—";
-  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
-  if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
-  return `$${num.toFixed(0)}`;
-}
-
-export default function StockTokensPage() {
+export default function AssetRegistryPage() {
   const [tokens, setTokens] = useState<StockToken[]>([]);
   const [loading, setLoading] = useState(true);
-  const [canonicalOnly, setCanonicalOnly] = useState(false);
+  const [canonicalOnly, setCanonicalOnly] = useState(true);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (canonicalOnly) params.set("canonicalOnly", "true");
-
-    fetch(`/api/v1/stock-tokens?${params.toString()}`)
-      .then((res) => res.json())
-      .then((json) => {
-        setTokens(json.data || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    fetch(`/api/v1/stock-tokens?canonicalOnly=${canonicalOnly}`)
+      .then((response) => response.json())
+      .then((payload) => setTokens(payload.data || []))
+      .finally(() => setLoading(false));
   }, [canonicalOnly]);
 
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return [...tokens]
+      .filter((token) => !needle || token.symbol?.toLowerCase().includes(needle) || token.name?.toLowerCase().includes(needle) || token.address.includes(needle))
+      .sort((a, b) => (b.metrics?.holderCount ?? -1) - (a.metrics?.holderCount ?? -1));
+  }, [tokens, query]);
+
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Stock Token Radar</h1>
-          <p className="text-muted-foreground mt-1">
-            Canonical identity + flow + relative value analysis
-          </p>
-        </header>
-
-        {/* Controls */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="canonicalOnly"
-              checked={canonicalOnly}
-              onChange={(e) => setCanonicalOnly(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="canonicalOnly" className="text-sm">Canonical Only</label>
-          </div>
-          <Badge variant="outline">{tokens.length} tokens</Badge>
+    <div className="page-shell">
+      <header className="section-hero">
+        <div>
+          <p className="eyebrow">CANONICAL IDENTITY</p>
+          <h1>Asset Registry</h1>
+          <p>Robinhood&apos;s asset registry matched to Blockscout contract metadata and holder observations.</p>
         </div>
+        <div className="registry-count"><strong>{tokens.length}</strong><span>tracked assets</span></div>
+      </header>
 
-        <Card>
-          <CardContent className="pt-6">
-            {loading ? (
-              <p className="text-muted-foreground py-8 text-center">Loading stock tokens...</p>
-            ) : tokens.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground mb-2">No stock tokens indexed yet</p>
-                <p className="text-sm text-muted-foreground">
-                  Run the canonical asset sync from Data Sources → Admin Sync to populate this radar.
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Stock Tokens will be verified against Robinhood&apos;s official <code>/rhj/assets</code> registry.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="p-2">Symbol</th>
-                      <th className="p-2">Name</th>
-                      <th className="p-2">Status</th>
-                      <th className="p-2">Multiplier</th>
-                      <th className="p-2">Contract</th>
-                      <th className="p-2 text-right">Holders</th>
-                      <th className="p-2 text-right">Buyers</th>
-                      <th className="p-2 text-right">Volume</th>
-                      <th className="p-2 text-right">Liquidity</th>
-                      <th className="p-2 text-right">Depth ±1%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tokens.map((token) => (
-                      <tr key={token.address} className="border-b hover:bg-muted/50">
-                        <td className="p-2 font-medium">{token.symbol}</td>
-                        <td className="p-2 text-muted-foreground">{token.name || "—"}</td>
-                        <td className="p-2"><CanonicalBadge status={token.canonicalStatus} /></td>
-                        <td className="p-2 font-mono text-xs">{token.canonicalAsset?.multiplier || "1.0"}</td>
-                        <td className="p-2">
-                          <a
-                            href={`https://robinhoodchain.blockscout.com/token/${token.address}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-mono text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            {formatAddress(token.address)} ↗
-                          </a>
-                        </td>
-                        <td className="p-2 text-right">{token.metrics?.holderCount?.toLocaleString() || "—"}</td>
-                        <td className="p-2 text-right">{token.metrics?.uniqueBuyers?.toLocaleString() || "—"}</td>
-                        <td className="p-2 text-right">{formatUsd(token.metrics?.volumeUsd || null)}</td>
-                        <td className="p-2 text-right">{formatUsd(token.metrics?.liquidityUsd || null)}</td>
-                        <td className="p-2 text-right">{formatUsd(token.metrics?.depth1pctUsd || null)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <section className="registry-controls">
+        <label className="search-field"><span>Search</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Symbol, name, or contract" /></label>
+        <label className="check-field"><input type="checkbox" checked={canonicalOnly} onChange={(event) => setCanonicalOnly(event.target.checked)} /> Canonical only</label>
+      </section>
 
-        {/* Legend */}
-        <div className="mt-4 text-xs text-muted-foreground space-y-1">
-          <p><strong>Canonical</strong>: Verified against Robinhood&apos;s official <code>/rhj/assets</code> registry by contract address exact match.</p>
-          <p><strong>Non-Canonical</strong>: Token exists on-chain but is NOT the official Stock Token — possible lookalike or ticker collision.</p>
-          <p><strong>Ticker Collision</strong>: Multiple tokens share the same symbol — this is NOT the canonical version.</p>
+      <section className="panel registry-panel">
+        <div className="panel-heading"><div><p className="section-kicker">SOURCE-MATCHED ASSETS</p><h2>{visible.length} results</h2></div><span className="method-chip">{loading ? "Refreshing" : "Robinhood + Blockscout"}</span></div>
+        <div className="transfer-table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Asset</th><th>Registry status</th><th>Holders</th><th>Holder change</th><th>Data coverage</th><th>Metadata observed</th><th>Contract</th></tr></thead>
+            <tbody>
+              {visible.map((token) => (
+                <tr key={token.address}>
+                  <td><strong>{token.symbol}</strong><small className="table-sub">{token.name || "Unnamed token"}</small></td>
+                  <td><span className={`event-pill ${token.canonicalStatus === "CANONICAL" ? "event-mint" : "event-burn"}`}>{token.canonicalStatus === "CANONICAL" ? "canonical" : token.canonicalStatus.toLowerCase()}</span></td>
+                  <td>{token.metrics?.holderCount?.toLocaleString() ?? "Not observed"}</td>
+                  <td className={(token.metrics?.holderDelta ?? 0) > 0 ? "positive" : (token.metrics?.holderDelta ?? 0) < 0 ? "negative" : ""}>{token.metrics?.holderDelta == null ? "Not observed" : `${token.metrics.holderDelta > 0 ? "+" : ""}${token.metrics.holderDelta.toLocaleString()}`}</td>
+                  <td>{token.metrics?.dataCompleteness == null ? "Not observed" : `${Math.round(token.metrics.dataCompleteness * 100)}%`}</td>
+                  <td>{relativeTime(token.lastSeenAt)}</td>
+                  <td><a className="mono" href={`https://robinhoodchain.blockscout.com/token/${token.address}`} target="_blank" rel="noreferrer">{shortAddress(token.address)} ↗</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!loading && visible.length === 0 && <div className="empty-state">No assets match this filter.</div>}
         </div>
-      </div>
+      </section>
+
+      <footer className="method-footer"><strong>Canonical</strong> means the contract address exactly matches Robinhood&apos;s public asset registry. Holder values are point-in-time Blockscout observations and can be unavailable.</footer>
     </div>
   );
 }

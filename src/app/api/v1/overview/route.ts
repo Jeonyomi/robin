@@ -15,9 +15,10 @@ export async function GET(request: Request) {
         data: database.data,
         meta: {
           window,
-          sources: ["blockscout", "robinhood"],
-          lastUpdatedAt: new Date().toISOString(),
-          calculationVersion: "v1",
+          sources: ["blockscout-direct", "robinhood-assets"],
+          lastUpdatedAt: database.data.lastUpdatedAt,
+          calculationVersion: "activity-v2",
+          methodology: "descriptive-observation",
           servedFrom: "neon-postgres",
         },
       });
@@ -25,14 +26,15 @@ export async function GET(request: Request) {
 
     const snap = await loadSnapshot();
     const data = snap ? pickWindow(snap.overview, window) : undefined;
-    if (data) {
+    if (data && "activity" in data && "coverage" in data) {
       return NextResponse.json({
         data,
         meta: {
           window,
-          sources: ["blockscout", "robinhood"],
+          sources: ["blockscout-direct", "robinhood-assets"],
           lastUpdatedAt: snap?.builtAt ?? new Date().toISOString(),
-          calculationVersion: "v1",
+          calculationVersion: "activity-v2",
+          methodology: "descriptive-observation",
           servedFrom: "snapshot",
           degraded: database.attempted,
         },

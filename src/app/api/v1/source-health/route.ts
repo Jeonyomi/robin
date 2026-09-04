@@ -6,7 +6,14 @@ import { loadSnapshot } from "@/lib/snapshot";
 
 async function checkUrl(url: string): Promise<string> {
   try {
-    const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(5000),
+    });
     return response.ok ? "healthy" : "degraded";
   } catch {
     return "unavailable";
@@ -23,11 +30,14 @@ export async function GET() {
     const findState = (source: string, jobName?: string) =>
       syncStates.find((s) => s.source === source && (!jobName || s.jobName === jobName));
 
-    const robinhoodAssetsStatus = await checkUrl("https://api.robinhood.com/rhj/assets");
-    const blockscoutStatus = await checkUrl("https://api.blockscout.com/4663/api/v2/stats");
+    const [robinhoodAssetsStatus, blockscoutStatus] = await Promise.all([
+      checkUrl("https://api.robinhood.com/rhj/assets"),
+      checkUrl("https://robinhoodchain.blockscout.com/api/v2/stats"),
+    ]);
 
-    const robinhoodState = findState("robinhood", "assets");
-    const blockscoutState = findState("blockscout");
+    const robinhoodState = findState("robinhood", "canonical-assets");
+    const blockscoutStatsState = findState("blockscout", "chain-stats");
+    const transferState = findState("blockscout", "token-transfers");
 
     const sources = [
       {
@@ -38,11 +48,18 @@ export async function GET() {
         lastError: robinhoodState?.lastError || null,
       },
       {
-        name: "Blockscout API",
-        url: "https://api.blockscout.com/4663/api/v2",
+        name: "Blockscout Chain Stats",
+        url: "https://robinhoodchain.blockscout.com/api/v2/stats",
         status: blockscoutStatus,
-        lastSuccessAt: blockscoutState?.lastSuccessAt || null,
-        lastError: blockscoutState?.lastError || null,
+        lastSuccessAt: blockscoutStatsState?.lastSuccessAt || null,
+        lastError: blockscoutStatsState?.lastError || null,
+      },
+      {
+        name: "Blockscout Token Transfers",
+        url: "https://robinhoodchain.blockscout.com/api/v2/tokens/{address}/transfers",
+        status: transferState?.lastSuccessAt ? transferState.lastError ? "degraded" : "healthy" : "unknown",
+        lastSuccessAt: transferState?.lastSuccessAt || null,
+        lastError: transferState?.lastError || null,
       },
       {
         name: "Database",
@@ -57,7 +74,8 @@ export async function GET() {
       data: {
         sources,
         overallStatus:
-          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" && database.ok
+          robinhoodAssetsStatus === "healthy" && blockscoutStatus === "healthy" &&
+          Boolean(transferState?.lastSuccessAt) && !transferState?.lastError && database.ok
             ? "healthy"
             : "degraded",
       },

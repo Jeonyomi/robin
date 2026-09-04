@@ -118,6 +118,12 @@ Neon. Keep one scheduler active to avoid overlapping runs. Synthetic economic
 actions are skipped by default; never set `ALLOW_SYNTHETIC_ACTIONS=true` in the
 production scheduler.
 
+The operating sequence is `canonical → stats → metadata → prices → transfers → metrics`.
+Transfer collection is intentionally bounded. Tune `TRANSFER_SYNC_BATCH_SIZE`,
+`TRANSFER_SYNC_HOT_TOKENS`, `TRANSFER_SYNC_MAX_PAGES`, and
+`TRANSFER_SYNC_LOOKBACK_HOURS` only after checking the direct Blockscout
+instance's stability. Heuristic signal generation is not in the default path.
+
 ## 8. Deploy and verify
 
 After committing and pushing the migration:
@@ -126,7 +132,7 @@ After committing and pushing the migration:
 2. Confirm `/api/v1/source-health` reports `Neon Postgres` and
    `meta.servedFrom: "neon-postgres"`.
 3. Confirm `/api/v1/overview?window=24h` returns current data.
-4. Compare token/signal/action counts with `pnpm db:check`.
+4. Confirm transfer count, source cursor, rotation progress, and latest observed block advance.
 5. Confirm `lastUpdatedAt` advances after a scheduled sync.
 6. Run `PLAYWRIGHT_BASE_URL=<preview-or-production-url> pnpm e2e`. For a
    Vercel-protected Preview, also set the local-only

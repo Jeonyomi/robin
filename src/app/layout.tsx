@@ -1,112 +1,61 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css";
 import Link from "next/link";
+import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Robinhood Chain Opportunity Intelligence",
-  description: "Onchain investment intelligence terminal for Robinhood Chain",
+  title: "Robin · Robinhood Chain Onchain Observatory",
+  description: "Source-labeled public onchain observations for Robinhood Chain",
 };
 
 const navItems = [
-  { href: "/", label: "Chain Pulse", icon: "📊", description: "Overview" },
-  { href: "/opportunities", label: "Opportunity Radar", icon: "🎯", description: "Rankings" },
-  { href: "/stock-tokens", label: "Stock Token Radar", icon: "📈", description: "Canonical" },
-  { href: "/tokens", label: "Token Scanner", icon: "🔍", description: "Discovery" },
-  { href: "/capital-flow", label: "Capital Flow", icon: "💰", description: "Bridge & DEX" },
-  { href: "/smart-money", label: "Smart Money", icon: "🧠", description: "Wallets" },
-  { href: "/alerts", label: "Alerts", icon: "🔔", description: "Signals" },
-];
-
-const settingsItems = [
-  { href: "/watchlist", label: "Watchlist", icon: "★" },
-  { href: "/settings/data-sources", label: "Data Sources", icon: "⚙️" },
+  { href: "/", marker: "01", label: "Overview", description: "Chain and tracked activity" },
+  { href: "/stock-tokens", marker: "02", label: "Asset Registry", description: "Canonical contracts" },
+  { href: "/capital-flow", marker: "03", label: "Transfers", description: "Raw onchain movement" },
+  { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Evidence-based ranking" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-background text-foreground`}>
-        <div className="flex min-h-screen">
-          {/* Sidebar */}
-          <aside className="w-60 border-r bg-card flex flex-col">
-            {/* Logo */}
-            <div className="p-4 border-b">
-              <h1 className="text-lg font-bold tracking-tight">🦉 Robin</h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Robinhood Chain · 4663
-              </p>
-            </div>
+      <body className={inter.variable}>
+        <div className="app-shell">
+          <aside className="app-sidebar">
+            <Link href="/" className="brand-block">
+              <span className="brand-mark">R</span>
+              <span><strong>Robin</strong><small>Onchain Observatory</small></span>
+            </Link>
 
-            {/* Nav */}
-            <nav className="flex-1 p-3 space-y-0.5">
+            <nav className="primary-nav" aria-label="Primary navigation">
               {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent hover:text-accent-foreground transition-colors group"
-                >
-                  <span className="text-base">{item.icon}</span>
-                  <span>{item.label}</span>
+                <Link key={item.href} href={item.href}>
+                  <span className="nav-marker">{item.marker}</span>
+                  <span><strong>{item.label}</strong><small>{item.description}</small></span>
                 </Link>
               ))}
             </nav>
 
-            {/* Settings */}
-            <div className="p-3 border-t">
-              {settingsItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
-                >
-                  <span className="text-base">{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3 border-t">
-              <div className="p-2 rounded-md bg-muted/50 text-xs text-muted-foreground space-y-0.5">
-                <p className="font-medium">Data Freshness</p>
-                <p>Last sync: Check Data Sources</p>
-                <p>Explorer: Blockscout</p>
-              </div>
+            <div className="sidebar-bottom">
+              <Link href="/settings/data-sources" className="source-link"><span className="source-pulse" /> Data sources & health</Link>
+              <div className="scope-card"><span>INDEX SCOPE</span><strong>Canonical tokens</strong><p>Free public APIs · bounded collection · no synthetic activity</p></div>
             </div>
           </aside>
 
-          {/* Main content */}
-          <main className="flex-1 overflow-auto">
-            {/* Global header */}
-            <header className="border-b bg-card px-6 py-3 flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                Chain: Robinhood Mainnet · Chain ID 4663
-              </div>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <a
-                  href="https://robinhoodchain.blockscout.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-foreground"
-                >
-                  Blockscout ↗
-                </a>
-                <a
-                  href="https://github.com/Jeonyomi/robin"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-foreground"
-                >
-                  GitHub ↗
-                </a>
+          <div className="app-content">
+            <header className="topbar">
+              <div><span className="network-dot" /> Robinhood Chain <b>4663</b></div>
+              <div className="topbar-links">
+                <a href="https://robinhoodchain.blockscout.com" target="_blank" rel="noreferrer">Explorer ↗</a>
+                <a href="https://github.com/Jeonyomi/robin" target="_blank" rel="noreferrer">Source ↗</a>
               </div>
             </header>
-
-            {children}
-          </main>
+            <nav className="mobile-nav" aria-label="Mobile navigation">
+              {navItems.map((item) => <Link key={item.href} href={item.href}>{item.label}</Link>)}
+            </nav>
+            <main>{children}</main>
+          </div>
         </div>
       </body>
     </html>

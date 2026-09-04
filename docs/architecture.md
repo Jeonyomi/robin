@@ -1,144 +1,132 @@
 # Architecture
 
-## System Overview
+## Product boundary
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Frontend (Next.js)                         │
-│  ┌─────────────┐ ┌──────────────┐ ┌─────────────┐ ┌────────────┐  │
-│  │ Dashboard   │ │ Opportunity  │ │ Stock Token │ │   Token    │  │
-│  │ Overview    │ │ Radar        │ │ Radar       │ │ Scanner    │  │
-│  └─────────────┘ └──────────────┘ └─────────────┘ └────────────┘  │
-│  ┌─────────────┐ ┌──────────────┐ ┌─────────────┐ ┌────────────┐  │
-│  │ Capital     │ │ Smart Money  │ │   Alerts    │ │   Settings │  │
-│  │ Flow        │ │              │ │             │ │            │  │
-│  └─────────────┘ └──────────────┘ └─────────────┘ └────────────┘  │
-├─────────────────────────────────────────────────────────────────────┤
-│                        API Layer (Route Handlers)                   │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐               │
-│  │ /api/v1/*    │ │ /api/admin/* │ │ /api/cron/*  │               │
-│  │ REST API     │ │ Sync Jobs    │ │ Maintenance  │               │
-│  └──────────────┘ └──────────────┘ └──────────────┘               │
-├─────────────────────────────────────────────────────────────────────┤
-│                      Domain Logic Layer                             │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐               │
-│  │ Identity     │ │ Risk Engine  │ │ Opportunity  │               │
-│  │ Resolver     │ │              │ │ Scorer       │               │
-│  └──────────────┘ └──────────────┘ └──────────────┘               │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐               │
-│  │ Signal       │ │ Smart Money  │ │ Economic     │               │
-│  │ Engine       │ │ Engine       │ │ Actions      │               │
-│  └──────────────┘ └──────────────┘ └──────────────┘               │
-├─────────────────────────────────────────────────────────────────────┤
-│                     Source Adapter Layer                            │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐               │
-│  │ Robinhood    │ │ Blockscout   │ │ RPC          │               │
-│  │ Assets API   │ │ REST API     │ │ WebSocket    │               │
-│  └──────────────┘ └──────────────┘ └──────────────┘               │
-├─────────────────────────────────────────────────────────────────────┤
-│                      Storage Layer                                  │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │ Neon Postgres via Vercel Marketplace (Drizzle ORM + HTTP)      │  │
-│  │ • canonical_assets    • token_transfers                       │  │
-│  │ • tokens              • economic_actions                      │  │
-│  │ • token_metric_snapshots • stock_token_price_snapshots        │  │
-│  │ • wallet_features     • signals                               │  │
-│  │ • source_sync_state   • protocol_registry                     │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+Robin is a source-labeled onchain observation system for Robinhood Chain. The operating path collects public data, preserves raw identifiers, computes descriptive aggregates, and exposes the evidence in a dashboard.
+
+It is not a full archival indexer, trading engine, investment adviser, or wallet-attribution service.
+
+## Runtime topology
+
+```text
+┌───────────────────────────────────────────────────────────┐
+│ Next.js                                                   │
+│ Overview · Asset Registry · Transfers · Activity Lens     │
+│                         ↓                                 │
+│ Shared query layer and API metadata                       │
+└─────────────────────────┬─────────────────────────────────┘
+                          ↓
+┌───────────────────────────────────────────────────────────┐
+│ Neon Postgres                                             │
+│ canonical_assets · tokens · token_transfers               │
+│ token_metric_snapshots · stock_token_price_snapshots      │
+│ source_sync_state                                         │
+│ legacy research tables retained but not used by home UI   │
+└─────────────────────────┬─────────────────────────────────┘
+                          ↑
+┌───────────────────────────────────────────────────────────┐
+│ Scheduled bounded collector                               │
+│ Robinhood APIs · Blockscout direct API                    │
+└───────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+Vercel Blob holds a read-only last-known snapshot for database outage fallback. It is not the source of truth.
 
-### 1. Ingestion Flow
+## Source adapters
 
+### Robinhood Assets API
+
+- Canonical asset identity
+- Contract address
+- Symbol, name, multiplier, and asset status
+
+Identity is established by exact contract-address match. Symbol equality alone is not canonical proof.
+
+### Robinhood reference prices
+
+- Bid/ask observations where available
+- Multiplier-normalized reference values
+
+Reference prices are not presented as DEX execution prices.
+
+### Blockscout direct API
+
+Base: `https://robinhoodchain.blockscout.com/api/v2`
+
+- `/stats`: chain-wide public statistics
+- `/tokens/{address}`: token metadata
+- `/tokens/{address}/counters`: holder and transfer counters
+- `/tokens/{address}/transfers`: raw token-transfer observations
+
+The direct instance is used because anonymous multi-chain API requests can require an API key or payment.
+
+## Transfer collection
+
+The collector is bounded and rotates over canonical tokens:
+
+1. Load the stable contract-address-ordered canonical registry.
+2. Read `source_sync_state.cursor` for the next token offset.
+3. Add a bounded set of recently active tokens.
+4. Fetch at most the configured pages per token with concurrency four.
+5. Stop when results pass the configured lookback boundary.
+6. Normalize addresses and token amounts.
+7. Insert with conflict protection on `(tx_hash, log_index, token_address)`.
+8. Persist coverage, failures, newest block, and event counts in the sync cursor.
+
+Partial token failures are recorded as `degraded`; an all-token failure is an error. No synthetic action is created.
+
+## Query model
+
+The overview query separates two scopes:
+
+### Chain-wide snapshot
+
+Latest public Blockscout totals and network observations stored in the `chain-stats` sync cursor.
+
+### Tracked-token observations
+
+Aggregates over stored `token_transfers`:
+
+- Transfer count
+- Unique sender/recipient addresses
+- Active tracked tokens
+- Mint/burn events using the zero-address boundary
+- Hourly counts
+- Current versus previous-window transfer count
+- Raw recent transactions
+
+Activity Index is calculated in application code from observed values and is explicitly descriptive.
+
+## Provenance and quality
+
+Every public response includes:
+
+- Source names
+- Observation window
+- Last update time
+- Serving layer (`neon-postgres` or fallback snapshot)
+- Calculation/methodology version
+
+The UI adds:
+
+- Rotation progress
+- Stored-transfer token coverage
+- Page-bounded lower-bound caveat
+- Direct Blockscout links
+- Synthetic exclusion statement
+
+## Default sync order
+
+```text
+canonical → stats → metadata → prices → transfers → metrics
 ```
-External APIs → Source Adapters → Normalized Models → DB Upserts
-```
 
-- **Robinhood Assets API** → Canonical asset registry
-- **Robinhood Price API** → Reference prices with multiplier normalization
-- **Blockscout API** → Token metadata, transfers, counters, contract info
-- **Chain RPC** → Block ingestion, log decoding (P1)
+Heuristic signals are not generated by the default sync. The legacy command remains available only for isolated research until its assumptions are validated against real decoded events.
 
-### 2. Calculation Flow
+## Failure behavior
 
-```
-DB Snapshots → Feature Engine → Opportunity/Risk Scores → Signals → API
-```
-
-1. Raw data collected via ingestion
-2. Feature engine computes token metrics per time window
-3. Risk engine evaluates contract, liquidity, concentration, manipulation, identity
-4. Opportunity engine scores across 6 weighted factors
-5. Signal engine detects specific patterns (accumulation, rotation, divergence)
-6. Results stored in DB, served via API
-
-### 3. User Interaction Flow
-
-```
-User → Dashboard Page → API Route → Neon Query → Response → UI Render
-```
-
-- Pages are client components that fetch from API routes
-- API routes query shared Neon Postgres (not external APIs) for consistent data
-- Local/automated sync jobs write to the same Neon database
-- Vercel Blob is a read-only fallback, not the primary database
-- Stale data shows "Last Updated" timestamp
-- Refresh button triggers scoped server-side re-fetch
-
-## Design Decisions
-
-### P-01: Canonical Identity First
-
-Stock Tokens are identified by **exact contract address match** against Robinhood's official registry, never by symbol or name. This prevents ticker collision attacks.
-
-### P-02: Cloud DB-First Reads
-
-All dashboard pages read from Neon, never directly from external APIs. This ensures:
-- One source of truth across local sync jobs and Vercel
-- Consistent data across users
-- Graceful read degradation through the last published Blob snapshot
-
-### P-03: Bounded Refresh
-
-User-triggered refresh is scoped and rate-limited:
-- 5-minute cooldown per scope (token, opportunity, etc.)
-- Maximum batch size per invocation
-- DB-level deduplication prevents concurrent duplicate fetches
-
-### P-04: Economic Actions > Raw Transfers
-
-A single swap transaction may generate 4+ token transfers (Wallet→Router, Router→Pool, Pool→Router, Router→Wallet). These are normalized into a single SWAP economic action to prevent volume inflation.
-
-### P-05: Risk Before Opportunity
-
-Risk gates are evaluated before opportunity scoring. Tokens that fail hard gates (ticker collision, no liquidity, extreme concentration) are marked RESTRICTED regardless of opportunity score.
-
-## File Structure
-
-```
-src/
-├── app/
-│   ├── (dashboard)/          # Client pages
-│   ├── api/v1/               # REST API routes
-│   ├── api/admin/sync/       # Admin sync endpoints
-│   └── api/cron/             # Scheduled jobs
-├── components/ui/            # Reusable UI primitives
-├── db/
-│   └── schema/               # Drizzle ORM schema
-├── lib/
-│   ├── config/               # Env validation, constants
-│   ├── db/                   # DB connection (lazy)
-│   ├── domain/               # Business logic
-│   │   ├── identity/         # Canonical resolver
-│   │   ├── risk/             # Risk scoring
-│   │   ├── opportunity/      # Opportunity scoring
-│   │   ├── signals/          # Signal generation
-│   │   └── smart-money/      # Wallet scoring
-│   ├── jobs/                 # Sync jobs
-│   └── sources/              # External API adapters
-│       ├── blockscout/
-│       └── robinhood/
-└── tests/                    # Unit + integration tests
-```
+- Required job failure sets a non-zero process status.
+- Snapshot publish is skipped after required job failure.
+- Missing values remain null.
+- Invalid external payloads fail schema validation.
+- Old snapshot shapes are not served as the new activity API contract.

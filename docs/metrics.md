@@ -1,138 +1,151 @@
 # Metrics Reference
 
-This document defines all core metrics used in the Robinhood Chain Opportunity Intelligence Dashboard.
+This document defines the metrics used in Robin's operating dashboard. All metrics are descriptive observations unless explicitly stated otherwise.
 
-## Chain-Level Metrics
+## Scope labels
 
-### Active Wallets
-- **Definition**: Unique wallet addresses that sent at least one transaction in the given time window
-- **Formula**: `COUNT(DISTINCT from_address) WHERE timestamp >= window_start`
-- **Window**: 1h, 6h, 24h, 7d
-- **Source**: Blockscout API → token_transfers / transactions
-- **Exclusions**: Router, pool, bridge, bundler, paymaster, protocol treasury addresses
-- **Caveats**: ERC-4337 bundler wallets inflate counts if not excluded; smart accounts may appear as one address
+### Chain-wide
 
-### Net Capital Inflow
-- **Definition**: Sum of bridge inflows minus bridge outflows in the given window
-- **Formula**: `SUM(bridge_in_usd) - SUM(bridge_out_usd)`
-- **Window**: 24h (default)
-- **Source**: Bridge contract events (Relay, Across, LayerZero, Arbitrum canonical)
-- **Exclusions**: Internal bridge hops (e.g., router → pool → router)
-- **Caveats**: Multi-hop bridges may double-count; source chain identification depends on event parsing
+A point-in-time value returned by Blockscout `/api/v2/stats`. These values describe the indexed network as reported by Blockscout.
 
-### DEX Economic Volume
-- **Definition**: Realized swap volume across all tracked DEX pools (Uniswap V3/V4, Arcus)
-- **Formula**: `SUM(swap_usd_value) WHERE action_type = 'SWAP'`
-- **Window**: 24h
-- **Source**: Uniswap PoolManager events, SwapRouter events
-- **Exclusions**: Router internal transfers, multi-hop routing counted once per economic action
-- **Caveats**: Price impact not factored into volume; MEV bot activity included
+### Tracked-token sample
 
-### USDG Net Flow
-- **Definition**: Net change in USDG stablecoin holdings across all tracked addresses
-- **Formula**: `SUM(usdg_in) - SUM(usdg_out)`
-- **Window**: 24h
-- **Source**: USDG token transfers
-- **Exclusions**: Protocol treasury, mint/burn operations
-- **Caveats**: Mint/burn can look like flow; differentiate with transaction context
+A value calculated from transfers stored by Robin's bounded rotating collector. These values do not represent a full archival scan and can be lower bounds.
 
-## Token-Level Metrics
+## Chain-wide metrics
 
-### Holder Count
-- **Definition**: Total unique addresses holding non-zero balance of a token
-- **Source**: Blockscout `/tokens/{address}/counters`
-- **Caveats**: Includes airdrop recipients, bots, routers, and protocol contracts
+### Total transactions
 
-### Holder Delta (Δ holders)
-- **Definition**: Change in holder count over the measurement window
-- **Formula**: `holders_end - holders_start`
-- **Window**: 24h, 7d
-- **Caveats**: May include sybil/airdrop wallets; use with active_holder_delta for quality
+- **Definition:** cumulative transaction count reported by Blockscout
+- **Source:** `/api/v2/stats.total_transactions`
+- **Freshness:** latest successful `chain-stats` sync
+- **Caveat:** Blockscout indexing latency can differ from chain head
 
-### Active Holder Delta
-- **Definition**: Change in holders who also initiated at least one transfer (not just received)
-- **Formula**: `COUNT(DISTINCT from_address WHERE action = 'transfer' OR action = 'swap')`
-- **Window**: 24h, 7d
-- **Caveats**: More reliable than raw holder delta but requires transfer event ingestion
+### Total addresses
 
-### Unique Buyers / Sellers
-- **Definition**: Distinct addresses that received (bought) or sent (sold) the token via DEX swap
-- **Formula**: `COUNT(DISTINCT counterparty_address) WHERE action_type = 'SWAP'`
-- **Window**: 1h, 6h, 24h
-- **Source**: Economic actions table
-- **Exclusions**: Router/pool addresses excluded as counterparties
+- **Definition:** cumulative address count reported by Blockscout
+- **Source:** `/api/v2/stats.total_addresses`
+- **Caveat:** addresses are not people or verified users
 
-### Net Flow USD
-- **Definition**: Net USD value of all buys minus all sells in the window
-- **Formula**: `SUM(buy_usd) - SUM(sell_usd)`
-- **Window**: 1h, 6h, 24h
-- **Source**: Economic actions with USD pricing
+### Total blocks
 
-### Liquidity USD
-- **Definition**: Total value locked in DEX pools for this token (sum of both sides)
-- **Source**: Uniswap pool reserves × token price
-- **Caveats**: TVL ≠ executable depth; liquidity can be concentrated in narrow ranges
+- **Definition:** latest indexed block total reported by Blockscout
+- **Source:** `/api/v2/stats.total_blocks`
 
-### Depth ±1% USD
-- **Definition**: Total USD value within ±1% of mid price that can be executed without >1% price impact
-- **Source**: Uniswap V3/V4 pool tick data analysis
-- **Caveats**: Calculated from pool reserves, not live order book; real execution may differ
+### Average block time
 
-### Volume / Liquidity Ratio
-- **Definition**: Economic volume divided by liquidity — higher ratio indicates efficient capital use
-- **Formula**: `volume_usd / liquidity_usd`
-- **Caveats**: Very high ratios may indicate wash trading or bot activity
+- **Definition:** Blockscout's current average block interval
+- **Source:** `/api/v2/stats.average_block_time`
+- **Unit:** milliseconds as returned by the source
 
-### Top 10 Share
-- **Definition**: Percentage of total supply held by the 10 largest non-LP, non-router wallets
-- **Formula**: `SUM(balance_top_10) / total_supply`
-- **Exclusions**: LP positions, burn addresses, router/pool contracts, protocol treasuries
-- **Caveats**: High concentration alone isn't negative; check against smart_money labels
+### Gas price
 
-### Sybil Ratio
-- **Definition**: Estimated proportion of holders that are sybil/bot wallets
-- **Formula**: Based on transfer pattern analysis, address age, and clustering
-- **Range**: 0.0 (clean) to 1.0 (fully sybil)
-- **Caveats**: Heuristic-based; lower confidence for new tokens
+- **Definition:** slow, average, and fast gas observations
+- **Source:** `/api/v2/stats.gas_prices`
+- **Unit:** Gwei
 
-## Stock Token-Specific Metrics
+## Tracked-token metrics
 
-### Adjusted Reference Price
-- **Definition**: Underlier mid price divided by current multiplier
-- **Formula**: `raw_mid_price / current_multiplier`
-- **Source**: Robinhood `/rhj/prices/{symbol}` + `/rhj/assets` multiplier
-- **Caveats**: Multiplier can change during corporate actions; always check multiplier freshness
+### Transfer events
 
-### Premium / Discount
-- **Definition**: DEX mid price relative to adjusted reference price
-- **Formula**: `(dex_mid / adjusted_reference_price) - 1`
-- **Caveats**: Requires fresh reference price; liquidity depth must support the trade for signal validity
+- **Formula:** `COUNT(*)` over stored `token_transfers` in the selected window
+- **Deduplication:** transaction hash + log index + token address
+- **Caveat:** page-bounded collection can make this a lower bound
 
-## Opportunity Score
+### Active addresses
 
-### Raw Opportunity Score
-- **Formula**: Weighted sum of normalized factors
-  - 23% Capital Flow
-  - 18% Adoption Momentum
-  - 18% Liquidity Quality
-  - 15% Smart Money
-  - 11% Relative Value
-  - 15% Catalyst / Structural Growth
-- **Normalization**: Each factor normalized to 0–100 using percentile or winsorized z-score
+- **Formula:** distinct union of `from_address` and `to_address` in the selected window
+- **Caveat:** an address is not a unique person; routers and automated accounts are not yet labeled
 
-### Adjusted Opportunity Score
-- **Formula**: `raw_score × (1 - risk_score / 125)`
-- **Caveats**: Hard gate triggers set status to RESTRICTED regardless of score
+### Active tokens
 
-### Data Completeness
-- **Definition**: Proportion of required factors that have valid data
-- **Range**: 0.0 to 1.0
-- **Threshold**: Below 0.6, confidence is LOW and score is not used for ranking
+- **Formula:** `COUNT(DISTINCT token_address)` in the selected window
+- **Scope:** canonical assets stored in Robin's registry
 
-## Confidence Levels
+### Mint events
 
-| Level | Criteria |
-|-------|----------|
-| HIGH | data_completeness ≥ 0.9, ≥ 5 factors available, canonical/verified source |
-| MEDIUM | data_completeness ≥ 0.6, ≥ 3 factors available |
-| LOW | data_completeness < 0.6 or < 3 factors available |
+- **Formula:** transfers where `from_address` is `0x0000000000000000000000000000000000000000`
+- **Meaning:** token issuance event at the ERC-20 transfer layer
+- **Caveat:** business purpose is not inferred
+
+### Burn events
+
+- **Formula:** transfers where `to_address` is the zero address
+- **Meaning:** token destruction event at the ERC-20 transfer layer
+- **Caveat:** business purpose is not inferred
+
+### Hourly transfer trend
+
+- **Formula:** transfer count grouped by UTC hour
+- **Companion metric:** distinct participating addresses in each hour
+- **Use:** identify when stored activity changed, not why it changed
+
+### Transfer momentum
+
+```text
+(current_window_transfers - previous_window_transfers)
+------------------------------------------------------ × 100
+             previous_window_transfers
+```
+
+If the previous window contains zero transfers and the current window is non-zero, the result is labeled `newly observed` rather than assigned an infinite percentage.
+
+### Holder count
+
+- **Definition:** token holder count reported by Blockscout counters
+- **Source:** `/tokens/{address}/counters`
+- **Caveat:** point-in-time observation; holders can include contracts, routers, or dust recipients
+
+### Holder change
+
+- **Formula:** latest holder-count observation minus the prior observation
+- **Caveat:** snapshot intervals can differ and should not be treated as an exact 24-hour change unless the timestamps support that interval
+
+## Activity Index
+
+The Activity Index ranks tokens within the selected response set.
+
+```text
+transfer_component = token transfers / maximum token transfers in result
+address_component  = token active addresses / maximum token active addresses in result
+
+Activity Index = round(100 × (0.60 × transfer_component + 0.40 × address_component))
+```
+
+Properties:
+
+- Relative, not absolute
+- Recalculated for every time window
+- Not comparable across different result sets
+- Does not include price, liquidity, PnL, wallet identity, or prediction
+- Intended to prioritize investigation only
+
+## Coverage metrics
+
+### Rotation progress
+
+- **Definition:** canonical tokens scanned in the current initial rotation divided by tracked canonical tokens
+- **Full-cycle state:** at least one complete registry rotation has finished
+
+### Tokens with stored transfers
+
+- **Definition:** distinct token addresses present in `token_transfers`
+- **Caveat:** zero stored transfers can mean no observed event or not-yet-scanned; use rotation state alongside this value
+
+### Last indexed time
+
+- **Definition:** `source_sync_state.last_success_at` for the `token-transfers` job
+
+## Metrics deliberately not asserted
+
+Until decoded and independently validated, Robin does not label raw transfers as:
+
+- DEX buy or sell volume
+- Bridge inflow or outflow
+- Net capital flow
+- Smart-money accumulation
+- Wallet profitability
+- Tradeable liquidity
+- Investment opportunity
+
+Legacy research code for these concepts is outside the default operating path.
