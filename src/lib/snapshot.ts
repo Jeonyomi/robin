@@ -62,7 +62,7 @@ export async function loadSnapshot(): Promise<Snapshot | null> {
 
   try {
     const url = snapshotUrl();
-    const res = await fetch(url, { next: { revalidate: 300 } });
+    const res = await fetch(url, { cache: "no-store" });
     if (res.ok) {
       cached = (await res.json()) as Snapshot;
       cachedAt = Date.now();
