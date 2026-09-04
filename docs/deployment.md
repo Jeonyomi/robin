@@ -114,7 +114,9 @@ pnpm db:check
 
 The existing `RobinSync` task can continue running `pnpm sync`; only its working
 copy needs the new `.env` containing `DATABASE_URL`. It now writes directly to
-Neon. Keep one scheduler active to avoid overlapping runs.
+Neon. Keep one scheduler active to avoid overlapping runs. Synthetic economic
+actions are skipped by default; never set `ALLOW_SYNTHETIC_ACTIONS=true` in the
+production scheduler.
 
 ## 8. Deploy and verify
 

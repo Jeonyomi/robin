@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/db";
 import { tokens, tokenMetricSnapshots, economicActions, sourceSyncState } from "@/db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, or, sql } from "drizzle-orm";
 
 /**
  * Job 5a — Generate synthetic economic actions from metric snapshots.
@@ -52,7 +52,12 @@ export async function generateEconomicActions(): Promise<{
       const recentCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(economicActions)
-        .where(eq(economicActions.inputAsset, token.address));
+        .where(
+          or(
+            eq(economicActions.inputAsset, token.address),
+            eq(economicActions.outputAsset, token.address),
+          ),
+        );
 
       if (recentCount[0] && Number(recentCount[0].count) > 0) continue;
 

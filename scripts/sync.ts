@@ -20,8 +20,9 @@ import { generateSignals } from "@/lib/jobs/generate-signals";
 import { publishSnapshotToBlob, formatBytes } from "./lib/snapshot-builder";
 
 const job = process.argv[2] || "all";
+const allowSyntheticActions = process.env.ALLOW_SYNTHETIC_ACTIONS === "true";
 
-async function run(jobName: string) {
+async function run(jobName: string): Promise<boolean> {
   const started = Date.now();
   console.log(`\n▶ ${jobName} — ${new Date().toISOString()}`);
   try {
@@ -40,6 +41,11 @@ async function run(jobName: string) {
         result = await calculateTokenMetrics();
         break;
       case "actions":
+        if (!allowSyntheticActions) {
+          throw new Error(
+            "Synthetic economic actions are disabled. Set ALLOW_SYNTHETIC_ACTIONS=true only for explicit demo runs.",
+          );
+        }
         result = await generateEconomicActions();
         break;
       case "signals":
@@ -50,21 +56,36 @@ async function run(jobName: string) {
     }
     console.log(`✓ ${jobName} done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     if (result) console.log("  ", JSON.stringify(result).slice(0, 500));
+    return true;
   } catch (error) {
     console.error(`✗ ${jobName} failed:`, error instanceof Error ? error.message : error);
     process.exitCode = 1;
+    return false;
   }
 }
 
 async function main() {
   if (job === "all" || job === "watch") {
-    const jobs = ["canonical", "metadata", "prices", "metrics", "actions", "signals"];
-    for (const j of jobs) await run(j);
+    const jobs = [
+      "canonical",
+      "metadata",
+      "prices",
+      "metrics",
+      ...(allowSyntheticActions ? ["actions"] : []),
+      "signals",
+    ];
+    if (!allowSyntheticActions) {
+      console.log("ℹ synthetic economic actions skipped (fail-closed default)");
+    }
+    let allSucceeded = true;
+    for (const j of jobs) {
+      if (!(await run(j))) allSucceeded = false;
+    }
 
     // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
     // Only in "all" mode (hourly) — watch mode re-runs every 5 min and would
     // burn Blob upload bandwidth. Skipped when BLOB_READ_WRITE_TOKEN is unset.
-    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN) {
+    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN && allSucceeded) {
       console.log("\n▶ publishing snapshot to Vercel Blob");
       try {
         const { url, sizeBytes } = await publishSnapshotToBlob();
@@ -75,7 +96,10 @@ async function main() {
           "✗ snapshot publish failed:",
           error instanceof Error ? error.message : error
         );
+        process.exitCode = 1;
       }
+    } else if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN && !allSucceeded) {
+      console.error("✗ snapshot publish skipped because one or more sync jobs failed");
     }
 
     if (job === "watch") {

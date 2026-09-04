@@ -1,2 +1,6 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "cmd /c C:\Users\USER\AppData\Local\Temp\robin\scripts\sync-hourly.cmd", 0, True
+Set FileSystem = CreateObject("Scripting.FileSystemObject")
+ScriptDirectory = FileSystem.GetParentFolderName(WScript.ScriptFullName)
+CommandLine = "cmd /c " & Chr(34) & ScriptDirectory & "\sync-hourly.cmd" & Chr(34)
+ExitCode = WshShell.Run(CommandLine, 0, True)
+WScript.Quit ExitCode
