@@ -60,8 +60,12 @@ test("JSON export/import, malicious labels remain text, invalid backup preserves
   await page.goto("/liquidity");
   await fill(page, "<img src=x onerror=alert(1)>");
   await page.getByRole("button", { name: "Add scenario" }).click();
+  // Web Lock writes are asynchronous; a zero-image assertion also passes
+  // before the saved article exists, so first wait for the persisted record.
+  await expect(page.getByRole("article")).toHaveCount(1);
   await expect(page.getByRole("article").locator("img")).toHaveCount(0);
   const original = await page.evaluate((key) => localStorage.getItem(key), KEY);
+  expect(original).not.toBeNull();
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadEvent;
