@@ -33,7 +33,7 @@ const navItems = [
   { href: "/stock-tokens", marker: "02", label: "Asset Registry", description: "Canonical contracts" },
   { href: "/capital-flow", marker: "03", label: "Transfers", description: "Raw onchain evidence" },
   { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Observed activity ranking" },
-  { href: "/liquidity", marker: "05", label: "LP Workspace", description: "Private range scenarios" },
+  { href: "/liquidity", marker: "05", label: "LP Leaders", description: "NFT fees and range research" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
