@@ -73,7 +73,7 @@ export async function fetchTokenTransfers(
     url.searchParams.set("block_number", String(cursor.blockNumber));
   }
 
-  const response = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+  const response = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(45_000) });
   if (response.status === 404) {
     return { items: [], nextCursor: null };
   }

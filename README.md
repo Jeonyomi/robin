@@ -91,6 +91,8 @@ TRANSFER_SYNC_LOOKBACK_HOURS=48
 METADATA_SYNC_BATCH_SIZE=50
 ```
 
+The 10-minute Windows scheduler runs an activity-first pulse: bounded token transfers, chain/gas stats, then a v3 snapshot publish. A stats refresh failure does not discard a successful transfer refresh; the snapshot retains the last stored stats. Full canonical, metadata, price, and metrics maintenance remains available through `pnpm sync` and should be scheduled separately from the latency-sensitive activity pulse.
+
 ## Sync pipeline
 
 ```text
