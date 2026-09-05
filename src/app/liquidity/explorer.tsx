@@ -43,6 +43,7 @@ export default function LpExplorer() {
   const [sort, setSort] = useState("fees");
   const [selected, setSelected] = useState<string | null>(null);
   const [retrySeconds, setRetrySeconds] = useState(0);
+  const [collectionDelayed, setCollectionDelayed] = useState(false);
   const retryUntil = useRef(0);
   const pending = useRef<AbortController | null>(null);
   const mounted = useRef(false);
@@ -51,7 +52,7 @@ export default function LpExplorer() {
     const controller = new AbortController();
     pending.current = controller;
     setLoading(true); setError(""); setSelected(null);
-    const timeout = setTimeout(() => controller.abort(), 125_000);
+    const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
       const response = await fetch("/api/v1/lp-leaders", { cache: "no-store", signal: controller.signal });
       if (!response.ok) {
@@ -71,9 +72,14 @@ export default function LpExplorer() {
       const weth = data.weth.toLowerCase();
       if (new Set(data.rows.map((row) => row.tokenId)).size !== data.rows.length || data.rows.some((row) => row.lowerWethPerBase >= row.upperWethPerBase || ![row.token0.address.toLowerCase(), row.token1.address.toLowerCase()].includes(weth) || row.baseAddress.toLowerCase() === weth)) throw new Error("Invalid leaderboard response. Ranking withheld.");
       if (!isFreshLeaderboard(data)) throw new Error("Observation is stale. Ranking withheld; Refresh to request a new observation.");
-      if (mounted.current && pending.current === controller) setBoard(data);
+      if (mounted.current && pending.current === controller) {
+        const meta = "meta" in body ? body.meta : null;
+        const collector = meta && typeof meta === "object" && "collector" in meta ? meta.collector : null;
+        setCollectionDelayed(!!collector && typeof collector === "object" && "lastAttemptOk" in collector && collector.lastAttemptOk === false);
+        setBoard(data);
+      }
     } catch (caught) {
-      if (mounted.current && pending.current === controller) { setBoard(null); setError(controller.signal.aborted ? "Read timed out. Ranking unavailable; try Refresh." : caught instanceof Error ? caught.message : "Leaderboard unavailable. Ranking withheld."); }
+      if (mounted.current && pending.current === controller) { setBoard(null); setCollectionDelayed(false); setError(controller.signal.aborted ? "Read timed out. Ranking unavailable; try Refresh." : caught instanceof Error ? caught.message : "Leaderboard unavailable. Ranking withheld."); }
     } finally {
       clearTimeout(timeout);
       if (pending.current === controller) { pending.current = null; if (mounted.current) setLoading(false); }
@@ -108,11 +114,12 @@ export default function LpExplorer() {
     <header className="leaders-hero"><div><p className="leaders-kicker">ONCHAIN RESEARCH / UNISWAP V3 / CHAIN 4663</p><h1>LP Leaders<span>.</span></h1><p>Discover high-fee LP NFTs. Inspect the range, inventory, and lifetime fee record behind each position.</p></div><span className="leaders-badge">Read only · WETH pairs</span></header>
     <div className="leaders-basis"><strong>Fees, not net profit.</strong> Ranks use lifetime fees recorded in WETH only. Other token fees appear separately, without price conversion in the ranking. This is not net profit, APR, or a whole-chain top list.</div>
     <section className="leaders-panel" aria-label="LP NFT leaderboard" aria-busy={loading}>
-      <div className="leaders-toolbar"><div><h2>Observed leaders</h2><p>Rank within the sampled WETH-pair positions</p></div><button type="button" onClick={() => void refresh()} disabled={loading || retrySeconds > 0}>{loading ? "Reading chain…" : retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Refresh"}</button></div>
-      <p className="leaders-observation"><strong>SHARED VERIFIED SNAPSHOT</strong> · not a live feed; at most 5 minutes old. Revalidated on demand after 90 seconds. Refresh reuses the verified observation while it remains valid.</p>
+      <div className="leaders-toolbar"><div><h2>Observed leaders</h2><p>Rank within the sampled WETH-pair positions</p></div><button type="button" onClick={() => void refresh()} disabled={loading || retrySeconds > 0}>{loading ? "Loading snapshot…" : retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Refresh"}</button></div>
+      <p className="leaders-observation"><strong>SHARED VERIFIED SNAPSHOT</strong> · not a live feed; collected separately about every 2 minutes, at most 5 minutes old. Refresh reads stored data without RPC calls.</p>
+      {visibleBoard && collectionDelayed && <p role="status" className="leaders-risk">Collector update delayed. The displayed verified observation is still within the five-minute limit.</p>}
       {visibleBoard && <><div className="leaders-coverage" data-testid="leader-coverage"><div><strong>{visibleBoard.sampled}<small> / {visibleBoard.totalNfts}</small></strong><span>Observed sample / enumerable NFTs</span></div><div><strong>{visibleBoard.eligible}</strong><span>Eligible</span></div><div><strong>{visibleBoard.excluded}</strong><span>Excluded</span></div><div><strong>{visibleBoard.unsupported}</strong><span>Unsupported</span></div></div><p className="leaders-observation">Stratified enumeration · not newest-only or chain-wide top ranking. Block {visibleBoard.blockNumber} · <time dateTime={visibleBoard.observedAt}>{visibleBoard.observedAt}</time> · automatic expiry, no background RPC polling.</p></>}
       <div className="leaders-controls"><label>Range state<select value={filter} onChange={(event) => { setFilter(event.target.value); setSelected(null); }}><option value="all">All states</option><option value="in-range">In range</option><option value="out">Out of range</option><option value="closed">Closed</option></select></label><label>Sort by<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="fees">WETH fees ↓</option><option value="capital">Inventory ↓</option></select></label><span>{visibleBoard ? `${rows.length} positions shown` : "Ranking withheld until a fresh observation"}</span></div>
-      {loading && !visibleBoard && <div role="status" className="leaders-empty"><span className="leaders-loading-dot" />Reading public NFT records…<p>The first snapshot can take up to 90 seconds. No wallet, signature, or token ID required.</p></div>}
+      {loading && !visibleBoard && <div role="status" className="leaders-empty"><span className="leaders-loading-dot" />Loading the verified snapshot…<p>Reading the latest published observation from storage. No wallet, signature, or on-demand chain scan required.</p></div>}
       {error && <div role="alert" className="leaders-error">{error}</div>}
       {visibleBoard && !rows.length && <div role="status" className="leaders-empty">{visibleBoard.rows.length ? "No positions match this range filter." : "No eligible WETH-pair positions in this observation."}<p>{visibleBoard.rows.length ? "Choose All states to see the observed sample." : "An empty sample does not mean there are no LP positions on the chain."}</p></div>}
       {!!rows.length && visibleBoard && <><div className="leaders-column-head" aria-hidden="true"><span>Rank / NFT position</span><span>Recorded WETH fees</span><span>Current LP inventory · WETH</span><span>Range structure / state</span></div><ol className="leaders-list">{rows.map((row, index) => <li key={row.tokenId} data-testid="leader-row"><button className="leaders-row" aria-expanded={selected === row.tokenId} aria-controls={`leader-${row.tokenId}`} aria-label={`Inspect NFT #${row.tokenId}`} onClick={() => setSelected(selected === row.tokenId ? null : row.tokenId)}><span className="leaders-identity"><span className="leaders-rank">{index + 1}</span><span><strong>#{row.tokenId}</strong><small>{row.baseSymbol}/WETH · {number(row.feeTier / 10_000)}% fee tier</small></span></span><span className="leaders-fees"><small className="leaders-mobile-label">Recorded WETH fees</small><strong>{number(row.feeIncomeWeth)}</strong></span><span className="leaders-capital"><small className="leaders-mobile-label">LP inventory · WETH</small>{number(row.capitalWeth)}</span><span className="leaders-range-state"><span>{row.structure}</span><small className={row.rangeState === "in-range" ? "leaders-in" : "leaders-out"}>{stateLabel(row.rangeState)} at observation <b aria-hidden="true">{selected === row.tokenId ? "−" : "+"}</b></small></span></button>{selected === row.tokenId && <LeaderDetails row={row} board={visibleBoard} />}</li>)}</ol></>}

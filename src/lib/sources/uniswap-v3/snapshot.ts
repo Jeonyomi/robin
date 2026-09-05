@@ -1,28 +1,17 @@
-import { unstable_cache } from "next/cache";
 import { isFreshLeaderboard, LP_LEADER_FRESH_MS } from "@/lib/lp-leaders";
-import { fetchLpLeaderboard } from "./leaders";
-import { LP_SNAPSHOT_REVALIDATE_SECONDS, LpUnavailableError, safeLpUnavailable } from "./availability";
+import { LpUnavailableError } from "./availability";
+import { readStoredLpSnapshot } from "./snapshot-store";
 
-// Platform Data Cache, not a process-global cache: cold workers and page refreshes
-// reuse one validated observation. No wallet, request headers, secrets or query keys.
-// Version this key when accounting/provenance rules change; never cache error bodies.
-const readSnapshot = unstable_cache(async () => {
-  try { return await fetchLpLeaderboard(); }
-  catch (error) { throw safeLpUnavailable(error); } // Next may log background failures.
-}, ["robin-lp-verified-snapshot-v2-chain-4663"], { revalidate: LP_SNAPSHOT_REVALIDATE_SECONDS });
-
+/** Read-only path: never imports or invokes the on-chain collector. */
 export async function fetchSharedLpSnapshot() {
-  let data = await readSnapshot();
-  // Next may retain its prior entry when revalidation fails. This hard source-age
-  // gate still runs on EVERY API request; cache access never renews observedAt.
-  // After inactivity, await the worker's shared in-flight refresh rather than
-  // immediately returning 503 while that same refresh is already running.
-  if (!isFreshLeaderboard(data)) data = await fetchLpLeaderboard();
-  if (!isFreshLeaderboard(data)) throw new LpUnavailableError(false);
-  return data;
+  const record = await readStoredLpSnapshot();
+  if (!record || !isFreshLeaderboard(record.data)) throw new LpUnavailableError(false);
+  return record;
 }
+
 export const lpSnapshotPolicy = {
-  mode: "shared-verified-snapshot",
-  revalidateSeconds: LP_SNAPSHOT_REVALIDATE_SECONDS,
+  mode: "scheduled-verified-snapshot",
+  collectionIntervalSeconds: 120,
   maxSourceAgeSeconds: LP_LEADER_FRESH_MS / 1000,
+  storage: "neon-postgres",
 } as const;

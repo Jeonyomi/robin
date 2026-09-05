@@ -44,6 +44,8 @@ export function createPacedLpFetch(signal: AbortSignal, options: { fetch?: typeo
       let limited = response.status === 429;
       try { const payload: unknown = JSON.parse(new TextDecoder().decode(bytes)); limited ||= !!payload && typeof payload === "object" && "error" in payload && !!payload.error && typeof payload.error === "object" && "code" in payload.error && payload.error.code === 429; } catch { /* viem rejects malformed JSON; no fabricated response. */ }
       if (limited) {
+        const known = new Set(["eth_chainId", "eth_getBlockByNumber", "eth_getCode", "eth_call", "eth_getLogs", "eth_getTransactionReceipt"]);
+        console.warn("LP_RPC_RATE_LIMIT", JSON.stringify({ method: known.has(body.method) ? body.method : "other" }));
         rateError = new LpUnavailableError(true, sourceRetryAfter(response.headers.get("Retry-After"), now()));
         stopped.abort(rateError); // Cancel queued and in-flight reads, not just the failing call.
         throw rateError;

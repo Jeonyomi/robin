@@ -1,7 +1,7 @@
 import { isFreshLeaderboard, type LpLeaderboard } from "@/lib/lp-leaders";
 import { lpSourceDiagnostic } from "./source-error";
 
-// Leave time for the next 90s collection before the 5-minute source-age cutoff.
+// Short-lived in-process reuse for collector callers; the public API is database-only.
 export const LP_SNAPSHOT_REVALIDATE_SECONDS = 90;
 export const LP_COLLECTION_TIMEOUT_MS = 90_000;
 
@@ -26,7 +26,7 @@ export function safeLpUnavailable(error: unknown): LpUnavailableError {
   return new LpUnavailableError(limited, delay);
 }
 
-/** Single flight and negative caching per worker; a shared Data Cache wraps successful snapshots. */
+/** Single flight and negative caching inside a collector process, never a public request. */
 export function createLpSnapshotService(collect: () => Promise<LpLeaderboard>, now = Date.now) {
   let cached: { data: LpLeaderboard; fetchedAt: number } | undefined;
   let flight: Promise<LpLeaderboard> | undefined;

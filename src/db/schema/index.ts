@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -13,6 +14,19 @@ import {
 
 const timestamptz = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "date" });
+
+// Dedicated LP publisher. No on-demand RPC collection from public requests.
+export const lpLeaderboardSnapshots = pgTable("lp_leaderboard_snapshots", {
+  sourceKey: text("source_key").primaryKey(),
+  snapshot: jsonb("snapshot").$type<unknown>(),
+  blockNumber: bigint("block_number", { mode: "bigint" }),
+  observedAt: timestamptz("observed_at"),
+  publishedAt: timestamptz("published_at"),
+  lastAttemptAt: timestamptz("last_attempt_at").notNull().defaultNow(),
+  lastAttemptOk: boolean("last_attempt_ok").notNull().default(false),
+  lastError: text("last_error"),
+  producerRevision: text("producer_revision"),
+});
 
 // ── Canonical Assets ────────────────────────────────────────────────────────
 

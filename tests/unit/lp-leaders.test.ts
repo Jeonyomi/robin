@@ -4,8 +4,7 @@ import * as adapter from "@/lib/sources/uniswap-v3/leaders";
 import { isFreshLeaderboard, LpLeaderboardSchema, LpLeaderSchema, rankLpLeaders } from "@/lib/lp-leaders";
 import { GET } from "@/app/api/v1/lp-leaders/route";
 
-// Unit-only cache seam. Actual shared Data Cache is exercised in the production build.
-vi.mock("next/cache", () => ({ unstable_cache: (fn: () => Promise<unknown>) => fn }));
+import * as storage from "@/lib/sources/uniswap-v3/snapshot-store";
 
 // EXPLICIT SYNTHETIC TEST FIXTURES ONLY. These are not live NFTs, prices, or user holdings.
 // The fixed manager/factory identify the adapter contract; all observations below are invented for tests.
@@ -272,50 +271,97 @@ describe("bounded sampling, schema and deterministic ranks", () => {
   });
 });
 
-describe("LP leaders API boundary — synthetic adapter only", () => {
-  beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(NOW); });
-  it.each(["unknown=1", "wallet=0x123", "tokenId=1", "provider=https://evil.invalid", "chainId=1"])("rejects query %s with 400 before discovery", async (query) => {
-    const fetch = vi.spyOn(adapter, "fetchLpLeaderboard").mockImplementation(fixture().fetch);
-    const response = await GET(new Request(`http://localhost/api/v1/lp-leaders?${query}`));
-    expect(response.status).toBe(400); expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
-    expect(await response.json()).toMatchObject({ data: null, error: expect.stringContaining("does not accept") });
-    expect(fetch).not.toHaveBeenCalled();
+describe("LP leaders stored-snapshot API", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(adapter, "fetchLpLeaderboard").mockRejectedValue(new Error("RPC must never run in the API"));
   });
-  it("serves a JSON success with no-store headers and source provenance", async () => {
-    const f = fixture(); vi.spyOn(adapter, "fetchLpLeaderboard").mockImplementation(f.fetch);
-    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
-    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
-    expect(response.headers.get("Content-Type")).toContain("application/json");
-    expect(await response.json()).toMatchObject({ error: null, data: { chainId: 4663, blockHash: HASH, eligible: 3 } });
+  async function record() {
+    const data = await fixture().fetch();
+    return { data, collector: { publishedAt: data.observedAt, lastAttemptAt: data.observedAt, lastAttemptOk: true, lastError: null, producerRevision: "a".repeat(40) } };
+  }
+  it.each(["?tokenId=1", "?wallet=0x1234", "?rpcUrl=https://evil.invalid", "?refresh=1"])("rejects caller inputs %s before storage", async (query) => {
+    const read = vi.spyOn(storage, "readStoredLpSnapshot");
+    const response = await GET(new Request(`https://app.invalid/api/v1/lp-leaders${query}`));
+    expect(response.status).toBe(400); expect(read).not.toHaveBeenCalled(); expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
   });
-  it("returns 429 with Retry-After for numeric RPC rate-limit errors", async () => {
-    vi.spyOn(adapter, "fetchLpLeaderboard").mockRejectedValue(new Error("PRIVATE_URL", { cause: { code: 429 } }));
-    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
-    expect(response.status).toBe(429); expect(response.headers.get("Retry-After")).toBe("60");
-    const body = await response.json(); expect(body.data).toBeNull(); expect(body.error).toMatch(/rate-limited/); expect(body.error).not.toContain("PRIVATE_URL");
+  it("returns the validated stored observation with collector provenance, without RPC", async () => {
+    const value = await record(); vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue(value);
+    const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
+    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toContain("no-store");
+    const body = await response.json(); expect(body.data).toEqual(value.data);
+    expect(body.meta).toMatchObject({ mode: "scheduled-verified-snapshot", storage: "neon-postgres", collectionIntervalSeconds: 120, collector: value.collector });
+    expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
   });
-  it("awaits fresh collection after an expired shared entry instead of a premature 503", async () => {
-    const fresh = await fixture().fetch();
-    const expired = { ...fresh, observedAt: new Date(NOW - 300_001).toISOString() };
-    const collect = vi.spyOn(adapter, "fetchLpLeaderboard").mockResolvedValueOnce(expired).mockResolvedValueOnce(fresh);
-    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
-    expect(response.status).toBe(200); expect((await response.json()).data.observedAt).toBe(fresh.observedAt);
-    expect(collect).toHaveBeenCalledTimes(2);
+  it("exposes a failed latest attempt separately from a still-fresh accepted observation", async () => {
+    const value = await record(); vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue({ ...value, collector: { ...value.collector, lastAttemptOk: false, lastError: "rate-limit" } });
+    const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
+    expect(response.status).toBe(200); expect((await response.json()).meta.collector.lastAttemptOk).toBe(false);
+    expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
   });
-  it("withholds expired shared cache data even if Next returns a previous successful entry", async () => {
-    const data = await fixture().fetch(); data.observedAt = new Date(NOW - 300_001).toISOString();
-    vi.spyOn(adapter, "fetchLpLeaderboard").mockResolvedValue(data);
-    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
-    expect(response.status).toBe(503); expect((await response.json()).data).toBeNull();
+  it.each(["missing", "expired", "unreadable"])("fails closed on %s storage without an RPC or in-memory fallback", async (kind) => {
+    const value = await record(); const read = vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue(value);
+    expect((await GET(new Request("https://app.invalid/api/v1/lp-leaders"))).status).toBe(200);
+    if (kind === "missing") read.mockResolvedValue(null);
+    else if (kind === "expired") read.mockResolvedValue({ ...value, data: { ...value.data, observedAt: new Date(NOW - 300_001).toISOString() } });
+    else read.mockRejectedValue(new Error("PRIVATE_DATABASE_URL"));
+    const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
+    expect(response.status).toBe(503); expect(response.headers.get("Retry-After")).toBe("15");
+    const body = await response.json(); expect(body.data).toBeNull(); expect(JSON.stringify(body)).not.toContain("PRIVATE_DATABASE_URL");
+    expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
   });
-  it("returns sanitized 503 and null data after success instead of stale rows", async () => {
-    const f = fixture(); vi.spyOn(adapter, "fetchLpLeaderboard").mockImplementation(f.fetch);
-    expect((await GET(new Request("http://localhost/api/v1/lp-leaders"))).status).toBe(200);
-    f.client.getChainId.mockRejectedValue(new Error("https://private.invalid/API_KEY <script>secret</script>"));
-    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
-    expect(response.status).toBe(503); expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
-    const body = await response.json();
-    expect(body).toEqual({ data: null, error: "LP ranking data is unavailable. No estimated or stale ranking is substituted." });
-    expect(JSON.stringify(body)).not.toMatch(/API_KEY|script|private|secret/);
+});
+
+describe("LP durable snapshot store", () => {
+  const revision = "a".repeat(40), attemptAt = new Date(NOW).toISOString();
+  async function row() {
+    const data = await fixture().fetch();
+    return { snapshot: data, block_number: data.blockNumber, observed_at: data.observedAt, published_at: attemptAt, last_attempt_at: attemptAt, last_attempt_ok: true, last_error: null, producer_revision: revision };
+  }
+  it("publishes with bound JSON, source timestamps, revision and atomic monotonic guards", async () => {
+    const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValue([{ block_number: value.block_number }]);
+    const store = storage.createLpSnapshotStore(query, () => NOW);
+    expect(await store.publish(value.snapshot, revision, attemptAt)).toBe(true);
+    expect(query.mock.calls[0][0]).toContain("EXCLUDED.block_number > lp_leaderboard_snapshots.block_number");
+    expect(query.mock.calls[0][0]).toContain("EXCLUDED.observed_at >= lp_leaderboard_snapshots.observed_at");
+    expect(query.mock.calls[0][1].slice(1)).toEqual([JSON.stringify(value.snapshot), value.block_number, value.observed_at, attemptAt, revision]);
+  });
+  it("does not renew source or publish timestamps for the same block/hash", async () => {
+    const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValueOnce([]).mockResolvedValue([value]);
+    expect(await storage.createLpSnapshotStore(query, () => NOW).publish(value.snapshot, revision, attemptAt)).toBe(false);
+    expect(query).toHaveBeenCalledTimes(2); expect(query.mock.calls[1][0]).toMatch(/^SELECT /);
+  });
+  it.each(["regression", "hash-conflict"])("refuses %s instead of overwriting accepted data", async (kind) => {
+    const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValueOnce([]).mockResolvedValue([value]);
+    const incoming = { ...value.snapshot, ...(kind === "regression" ? { blockNumber: "999" } : { blockHash: OTHER_HASH }) };
+    await expect(storage.createLpSnapshotStore(query, () => NOW).publish(incoming, revision, attemptAt)).rejects.toThrow(/regressing or conflicting/);
+  });
+  it("rejects expired or structurally inconsistent publications before any database operation", async () => {
+    const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>(); const store = storage.createLpSnapshotStore(query, () => NOW);
+    await expect(store.publish({ ...value.snapshot, observedAt: new Date(NOW - 300_001).toISOString() }, revision, attemptAt)).rejects.toThrow(/Expired/);
+    await expect(store.publish({ ...value.snapshot, sampled: 12 }, revision, attemptAt)).rejects.toThrow(/integrity/);
+    expect(query).not.toHaveBeenCalled();
+  });
+  it("failure writes only attempt state and cannot overwrite a later attempt or accepted payload", async () => {
+    const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValue([]);
+    await storage.createLpSnapshotStore(query, () => NOW).recordFailure("rate-limit", attemptAt);
+    const update = query.mock.calls[0][0].split("DO UPDATE")[1];
+    expect(update).not.toMatch(/snapshot\s*=|observed_at\s*=|published_at\s*=|producer_revision\s*=/);
+    expect(update).toContain("EXCLUDED.last_attempt_at >= lp_leaderboard_snapshots.last_attempt_at");
+    expect(query.mock.calls[0][1].slice(1)).toEqual([attemptAt, "rate-limit"]);
+  });
+  it("validates stored payload against independently stored observation metadata", async () => {
+    const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValue([value]);
+    const store = storage.createLpSnapshotStore(query, () => NOW);
+    expect((await store.read())?.data.observedAt).toBe(value.observed_at);
+    query.mockResolvedValue([{ ...value, block_number: "42" }]);
+    await expect(store.read()).rejects.toThrow(/does not match/);
+    query.mockResolvedValue([{ ...value, snapshot: { ...value.snapshot, rows: [value.snapshot.rows[0], value.snapshot.rows[0]] } }]);
+    await expect(store.read()).rejects.toThrow();
+  });
+  it("returns no observation for an absent row or a first failed collection", async () => {
+    const query = vi.fn<storage.LpSnapshotQuery>().mockResolvedValueOnce([]).mockResolvedValue([{ snapshot: null }]);
+    const store = storage.createLpSnapshotStore(query, () => NOW);
+    expect(await store.read()).toBeNull(); expect(await store.read()).toBeNull();
   });
 });

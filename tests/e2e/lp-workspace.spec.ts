@@ -30,6 +30,9 @@ test("REAL public API auto-loads NFT leaders and opens actual details without fi
   const response = await responsePromise;
   expect(response.status(), await response.text()).toBe(200);
   const body = await response.json();
+  expect(body.meta).toMatchObject({ mode: "scheduled-verified-snapshot", storage: "neon-postgres" });
+  expect(body.meta.collector.producerRevision).toMatch(/^[a-f0-9]{40}$/);
+  if (process.env.LP_EXPECTED_REVISION) expect(body.meta.collector.producerRevision).toBe(process.env.LP_EXPECTED_REVISION);
   expect(body.error).toBeNull();
   const data = LpLeaderboardSchema.parse(body.data);
   expect(data.rows.length, "Real RPC must return observed eligible NFT rows; do not replace with fixtures").toBeGreaterThan(0);
@@ -68,6 +71,19 @@ test("REAL public API auto-loads NFT leaders and opens actual details without fi
   await testInfo.attach("real-refresh-checks", { body: JSON.stringify(refreshChecks, null, 2), contentType: "application/json" });
   expect(writes).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("fixture: failed collector is disclosed separately and expires without extending the observation", async ({ page }) => {
+  const now = new Date(); await page.clock.install({ time: now });
+  let calls = 0;
+  await page.route(ENDPOINT, (route) => { calls++; return route.fulfill({ json: { data: testFixtureBoard({ observedAt: now.toISOString() }), error: null, meta: { collector: { lastAttemptOk: false } } } }); });
+  await page.goto("/liquidity"); await expect(rows(page)).toHaveCount(2);
+  await expect(page.getByText(/Collector update delayed/)).toBeVisible();
+  await expect(page.locator(".leaders-observation time")).toHaveAttribute("datetime", now.toISOString());
+  await page.clock.fastForward(LP_LEADER_FRESH_MS + 1000);
+  await expect(rows(page)).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("stale");
+  expect(calls).toBe(1);
 });
 
 test("fixture: fee ranking, inventory sort, range filters and exact native decimals", async ({ page }) => {
@@ -175,7 +191,7 @@ test("fixture: shared snapshot retains observedAt on refresh and expires without
   await page.goto("/liquidity"); await expect(rows(page)).toHaveCount(2);
   await expect(page.getByText("SHARED VERIFIED SNAPSHOT", { exact: true })).toBeVisible();
   await expect(page.getByText(/at most 5 minutes old/i)).toBeVisible();
-  await expect(page.getByText(/revalidated on demand after 90 seconds/i)).toBeVisible();
+  await expect(page.getByText(/collected separately about every 2 minutes/i)).toBeVisible();
   await page.clock.fastForward(LP_LEADER_FRESH_MS / 2);
   await expect(rows(page)).toHaveCount(2);
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
