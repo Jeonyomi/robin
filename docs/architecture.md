@@ -94,7 +94,7 @@ Aggregates over stored `token_transfers`:
 - Hourly counts
 - Raw recent transfer events with transaction links
 
-Activity Lens exposes a limited descriptive ranking only when the operational release gate passes: at least one completed registry rotation, a healthy transfer index updated within 30 minutes, at least 95% stored-transfer coverage, and observations in the selected window. The index uses 60% relative observed transfer events and 40% relative observed unique addresses; window-over-window transfer change is separate evidence. Page-bounded lower-bound and non-predictive caveats remain part of the public response.
+Activity Lens exposes a limited descriptive ranking only when the operational release gate passes: at least one completed registry rotation, a transfer index updated within two hours, at least 95% stored-transfer coverage, and observations in the selected window. The index uses 60% relative observed transfer events and 40% relative observed unique addresses; window-over-window transfer change is separate evidence. Page-bounded lower-bound and non-predictive caveats remain part of the public response.
 
 ## Provenance and quality
 

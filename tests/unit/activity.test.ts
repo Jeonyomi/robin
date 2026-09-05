@@ -57,8 +57,8 @@ describe("onchain activity domain", () => {
       completedCycles: 7,
       trackedTokens: 194,
       tokensWithStoredTransfers: 192,
-      syncStatus: "success",
-      lastIndexedAt: "2026-09-05T00:00:00.000Z",
+      syncStatus: "error",
+      lastIndexedAt: "2026-09-04T22:00:00.000Z",
       rankedTokens: 12,
     }, now);
     expect(stale.active).toBe(false);

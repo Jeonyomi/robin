@@ -86,7 +86,7 @@ export default function ActivityLensPage() {
       <section className="scope-banner compact-scope">
         <div><span className="scope-label">RELEASE STATUS</span><strong>{loading ? "Checking current index" : active ? "Limited observation ranking active" : "Temporarily withheld"}</strong></div>
         <div className="coverage-track"><span style={{ width: `${meta.release?.coveragePct ?? 0}%` }} /></div>
-        <p className="scope-note">{meta.observationBoundary ?? "The gate requires a fresh successful index, a completed registry rotation, and at least 95% stored-transfer coverage."}</p>
+        <p className="scope-note">{meta.observationBoundary ?? "The gate requires a recent successful index, a completed registry rotation, and at least 95% stored-transfer coverage."}</p>
       </section>
 
       <section className="panel leaders-panel">

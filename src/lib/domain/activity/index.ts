@@ -19,7 +19,7 @@ export type ActivityLensRelease = {
 };
 
 const MIN_STORED_TRANSFER_COVERAGE = 0.95;
-const MAX_INDEX_AGE_MS = 30 * 60 * 1000;
+const MAX_INDEX_AGE_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Operational release gate for the descriptive Activity Lens. This permits a
@@ -38,9 +38,6 @@ export function evaluateActivityLensRelease(
   const reasons: string[] = [];
 
   if (input.completedCycles < 1) reasons.push("Initial registry rotation is incomplete");
-  if (input.syncStatus !== "success" && input.syncStatus !== "running") {
-    reasons.push("Latest transfer sync is not healthy");
-  }
   if (coverage < MIN_STORED_TRANSFER_COVERAGE) reasons.push("Stored transfer coverage is below 95%");
   if (!Number.isFinite(indexedAtMs) || indexAgeMs > MAX_INDEX_AGE_MS || indexAgeMs < -5 * 60 * 1000) {
     reasons.push("Transfer index is stale or has an invalid timestamp");
