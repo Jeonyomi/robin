@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchLpLeaderboard } from "@/lib/sources/uniswap-v3/leaders";
+import { lpSourceDiagnostic } from "@/lib/sources/uniswap-v3/source-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,6 +11,7 @@ export async function GET(request: Request) {
   }
   try { return NextResponse.json({ data: await fetchLpLeaderboard(), error: null }, { headers }); }
   catch (error) {
+    console.warn("LP_LEADERS_SOURCE_FAILURE", JSON.stringify(lpSourceDiagnostic(error)));
     // The adapter permits only fixed internal messages across this boundary.
     return NextResponse.json({ data: null, error: error instanceof Error ? error.message : "LP ranking data is unavailable." }, { status: 503, headers });
   }
