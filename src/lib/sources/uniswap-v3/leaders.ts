@@ -1,6 +1,7 @@
 import { createPublicClient, decodeEventLog, defineChain, formatUnits, http, keccak256, pad, parseAbi, toEventSelector, toHex, type Abi, type Address, type Hex } from "viem";
 import { z } from "zod";
-import { setTimeout as waitForRateSlot } from "node:timers/promises";
+import { createPacedLpFetch } from "./paced-fetch";
+import { createLpSnapshotService, LP_COLLECTION_TIMEOUT_MS } from "./availability";
 import { feeGrowthInside, inventoryAtPrice, pendingFee, reconcileFeeLedger, type FeeEvent } from "@/lib/domain/lp/fees";
 import { isFreshLeaderboard, LpLeaderboardSchema, LpLeaderSchema, rankLpLeaders, type LpLeaderboard, type LpLeader } from "@/lib/lp-leaders";
 
@@ -8,7 +9,7 @@ const RPC = "https://rpc.mainnet.chain.robinhood.com";
 const MANAGER = "0x73991a25c818bf1f1128deaab1492d45638de0d3" as const;
 const FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa" as const;
 const ZERO = "0x0000000000000000000000000000000000000000";
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = LP_COLLECTION_TIMEOUT_MS;
 const MAX_SAMPLE = 12;
 // Runtime bytecode matched Ethereum's canonical deployment independently.
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
@@ -67,36 +68,10 @@ export function sampleNftIndices(total: number): number[] {
 }
 
 function publicClient(signal: AbortSignal): LeaderReadClient {
-  let methods = 0; let requests = 0; let nextRequestAt = 0;
-  const fetchFn: typeof fetch = async (url, init) => {
-    signal.throwIfAborted();
-    // Shared pace across both transports: public RPC has observable burst limits.
-    const delay = Math.max(0, nextRequestAt - Date.now());
-    nextRequestAt = Math.max(Date.now(), nextRequestAt) + 350;
-    if (delay) await waitForRateSlot(delay, undefined, { signal });
-    signal.throwIfAborted();
-    const body = JSON.parse(String(init?.body ?? "{}"));
-    methods += Array.isArray(body) ? body.length : 1;
-    requireState(++requests <= 180 && methods <= 1800, "LP source request budget exceeded.");
-    const response = await fetch(url, { ...init, cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(10_000), ...(init?.signal ? [init.signal] : [])]) });
-    // Bound decoded bodies as well as duration. No arbitrary RPC/provider overrides.
-    const reader = response.body?.getReader();
-    const chunks: Uint8Array[] = []; let size = 0;
-    if (reader) {
-      while (true) {
-        const part = await reader.read(); if (part.done) break;
-        size += part.value.byteLength;
-        if (size > 2_000_000) { await reader.cancel(); throw new SourceError("LP source response exceeded its safe limit."); }
-        chunks.push(part.value);
-      }
-    }
-    const bytes = new Uint8Array(size); let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return new Response(bytes, { status: response.status, headers: { "Content-Type": "application/json" } });
-  };
-  // The public RPC limits batch members as requests and returns malformed
-  // batch-level 429 bodies. Only verified view calls use EVM Multicall below.
-  const transport = () => http(RPC, { retryCount: 0, timeout: 10_000, batch: false, fetchFn });
+  const fetchFn = createPacedLpFetch(signal);
+  // Timeout belongs to the dispatched network read, not time waiting in the pace queue.
+  // createPacedLpFetch bounds each read at 10s; the whole collection has a 90s deadline.
+  const transport = () => http(RPC, { retryCount: 0, timeout: 0, batch: false, fetchFn });
   const chain = defineChain({ id: 4663, name: "Robinhood Chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } }, contracts: { multicall3: { address: MULTICALL } } });
   const calls = createPublicClient({ chain, cacheTime: 0, transport: transport(), batch: { multicall: { batchSize: 4096, wait: 10 } } });
   const isolated = createPublicClient({ cacheTime: 0, transport: transport(), batch: { multicall: false } });
@@ -288,10 +263,4 @@ export function createLpLeaderboardFetcher(factory: (signal: AbortSignal) => Lea
   };
 }
 const fetchLive = createLpLeaderboardFetcher(publicClient);
-let cached: { data: LpLeaderboard; fetchedAt: number } | undefined;
-let flight: Promise<LpLeaderboard> | undefined;
-export function fetchLpLeaderboard(): Promise<LpLeaderboard> {
-  if (cached && Date.now() - cached.fetchedAt < 45_000 && isFreshLeaderboard(cached.data)) return Promise.resolve(cached.data);
-  if (!flight) flight = fetchLive().then((data) => { cached = { data, fetchedAt: Date.now() }; return data; }).catch((error) => { cached = undefined; throw error; }).finally(() => { flight = undefined; });
-  return flight;
-}
+export const fetchLpLeaderboard = createLpSnapshotService(fetchLive);

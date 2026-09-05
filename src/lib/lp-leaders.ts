@@ -29,7 +29,8 @@ export const LpLeaderboardSchema = z.object({
 });
 export type LpLeaderboard = z.infer<typeof LpLeaderboardSchema>;
 
-export const LP_LEADER_FRESH_MS = 120_000;
+// Research snapshots, never labeled live: source age remains bounded even on cache hits.
+export const LP_LEADER_FRESH_MS = 300_000;
 export function isFreshLeaderboard(data: Pick<LpLeaderboard, "observedAt">, now = Date.now()) {
   const age = now - Date.parse(data.observedAt);
   return Number.isFinite(age) && age >= -30_000 && age <= LP_LEADER_FRESH_MS;

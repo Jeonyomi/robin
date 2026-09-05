@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeAbiParameters, encodeEventTopics, parseAbi, toHex, type Address, type Hex } from "viem";
 import * as adapter from "@/lib/sources/uniswap-v3/leaders";
 import { isFreshLeaderboard, LpLeaderboardSchema, LpLeaderSchema, rankLpLeaders } from "@/lib/lp-leaders";
 import { GET } from "@/app/api/v1/lp-leaders/route";
+
+// Unit-only cache seam. Actual shared Data Cache is exercised in the production build.
+vi.mock("next/cache", () => ({ unstable_cache: (fn: () => Promise<unknown>) => fn }));
 
 // EXPLICIT SYNTHETIC TEST FIXTURES ONLY. These are not live NFTs, prices, or user holdings.
 // The fixed manager/factory identify the adapter contract; all observations below are invented for tests.
@@ -163,14 +166,14 @@ describe("automatic LP discovery — synthetic injected read client", () => {
     const f = fixture(); f.state.chainId = 1;
     await expect(f.fetch()).rejects.toThrow(/network/); expect(f.client.readContract).not.toHaveBeenCalled();
   });
-  it.each([-121, 31])("rejects stale/future source timestamps (%s seconds)", async (seconds) => {
+  it.each([-301, 31])("rejects stale/future source timestamps (%s seconds)", async (seconds) => {
     const f = fixture(); f.state.timestamp += BigInt(seconds);
     await expect(f.fetch()).rejects.toThrow(/stale/); expect(f.client.readContract).not.toHaveBeenCalled();
   });
   it("preserves block observation time and rejects a scan that ages out", async () => {
     const f = fixture(); f.state.timestamp -= BigInt(90);
     expect((await f.fetch()).observedAt).toBe(new Date(NOW - 90_000).toISOString());
-    const now = vi.fn().mockReturnValueOnce(NOW).mockReturnValue(NOW + 121_000);
+    const now = vi.fn().mockReturnValueOnce(NOW).mockReturnValue(NOW + 301_000);
     await expect(adapter.createLpLeaderboardFetcher(f.factory, now)()).rejects.toThrow(/aged out/);
   });
   it.each(["hash", "number"])("rejects end-of-scan reorg/identity drift: %s", async (field) => {
@@ -226,7 +229,7 @@ describe("automatic LP discovery — synthetic injected read client", () => {
     vi.useFakeTimers(); const f = fixture();
     f.client.getChainId.mockImplementation(() => new Promise(() => {}));
     const rejected = expect(f.fetch()).rejects.toThrow(/timed out.*No stale/);
-    await vi.advanceTimersByTimeAsync(45_000); await rejected;
+    await vi.advanceTimersByTimeAsync(90_000); await rejected;
     expect(f.factory.mock.calls[0][0].aborted).toBe(true);
     expect(f.client.getBlock).not.toHaveBeenCalled();
   });
@@ -255,7 +258,7 @@ describe("bounded sampling, schema and deterministic ranks", () => {
     const before = [...rows]; expect(rankLpLeaders(rows).map((r) => r.tokenId)).toEqual(["99", "2", "10", "9007199254740993"]);
     expect(rows).toEqual(before);
   });
-  it.each([[-120_001, false], [-120_000, true], [0, true], [30_000, true], [30_001, false]])("checks inclusive freshness offset %s", (offset, fresh) => {
+  it.each([[-300_001, false], [-300_000, true], [0, true], [30_000, true], [30_001, false]])("checks inclusive freshness offset %s", (offset, fresh) => {
     expect(isFreshLeaderboard({ observedAt: new Date(NOW + Number(offset)).toISOString() }, NOW)).toBe(fresh);
   });
   it("rejects invalid time, wrong-chain schemas, nonfinite values and malformed raw fees", async () => {
@@ -270,6 +273,7 @@ describe("bounded sampling, schema and deterministic ranks", () => {
 });
 
 describe("LP leaders API boundary — synthetic adapter only", () => {
+  beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(NOW); });
   it.each(["unknown=1", "wallet=0x123", "tokenId=1", "provider=https://evil.invalid", "chainId=1"])("rejects query %s with 400 before discovery", async (query) => {
     const fetch = vi.spyOn(adapter, "fetchLpLeaderboard").mockImplementation(fixture().fetch);
     const response = await GET(new Request(`http://localhost/api/v1/lp-leaders?${query}`));
@@ -283,6 +287,26 @@ describe("LP leaders API boundary — synthetic adapter only", () => {
     expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
     expect(response.headers.get("Content-Type")).toContain("application/json");
     expect(await response.json()).toMatchObject({ error: null, data: { chainId: 4663, blockHash: HASH, eligible: 3 } });
+  });
+  it("returns 429 with Retry-After for numeric RPC rate-limit errors", async () => {
+    vi.spyOn(adapter, "fetchLpLeaderboard").mockRejectedValue(new Error("PRIVATE_URL", { cause: { code: 429 } }));
+    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
+    expect(response.status).toBe(429); expect(response.headers.get("Retry-After")).toBe("60");
+    const body = await response.json(); expect(body.data).toBeNull(); expect(body.error).toMatch(/rate-limited/); expect(body.error).not.toContain("PRIVATE_URL");
+  });
+  it("awaits fresh collection after an expired shared entry instead of a premature 503", async () => {
+    const fresh = await fixture().fetch();
+    const expired = { ...fresh, observedAt: new Date(NOW - 300_001).toISOString() };
+    const collect = vi.spyOn(adapter, "fetchLpLeaderboard").mockResolvedValueOnce(expired).mockResolvedValueOnce(fresh);
+    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
+    expect(response.status).toBe(200); expect((await response.json()).data.observedAt).toBe(fresh.observedAt);
+    expect(collect).toHaveBeenCalledTimes(2);
+  });
+  it("withholds expired shared cache data even if Next returns a previous successful entry", async () => {
+    const data = await fixture().fetch(); data.observedAt = new Date(NOW - 300_001).toISOString();
+    vi.spyOn(adapter, "fetchLpLeaderboard").mockResolvedValue(data);
+    const response = await GET(new Request("http://localhost/api/v1/lp-leaders"));
+    expect(response.status).toBe(503); expect((await response.json()).data).toBeNull();
   });
   it("returns sanitized 503 and null data after success instead of stale rows", async () => {
     const f = fixture(); vi.spyOn(adapter, "fetchLpLeaderboard").mockImplementation(f.fetch);

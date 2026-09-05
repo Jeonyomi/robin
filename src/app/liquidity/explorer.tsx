@@ -42,16 +42,27 @@ export default function LpExplorer() {
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("fees");
   const [selected, setSelected] = useState<string | null>(null);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const retryUntil = useRef(0);
   const pending = useRef<AbortController | null>(null);
   const mounted = useRef(false);
   const refresh = useCallback(async () => {
-    if (pending.current) return;
+    if (pending.current || Date.now() < retryUntil.current) return;
     const controller = new AbortController();
     pending.current = controller;
-    setLoading(true); setError(""); setBoard(null); setSelected(null);
-    const timeout = setTimeout(() => controller.abort(), 65_000);
+    setLoading(true); setError(""); setSelected(null);
+    const timeout = setTimeout(() => controller.abort(), 125_000);
     try {
       const response = await fetch("/api/v1/lp-leaders", { cache: "no-store", signal: controller.signal });
+      if (!response.ok) {
+        const requested = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isSafeInteger(requested) && requested > 0 ? requested : response.status === 429 ? 60 : 15;
+        if (mounted.current && pending.current === controller) {
+          retryUntil.current = Date.now() + seconds * 1000;
+          setRetrySeconds(seconds);
+        }
+        throw new Error(response.status === 429 ? "Leaderboard unavailable: the source is rate-limited. Please wait before retrying." : "Leaderboard unavailable. Please wait before retrying.");
+      }
       const body: unknown = await response.json();
       if (!response.ok || !body || typeof body !== "object" || !("data" in body) || !("error" in body) || body.error !== null) throw new Error("Leaderboard unavailable. No previous ranking is displayed. Try Refresh.");
       const parsed = LpLeaderboardSchema.safeParse(body.data);
@@ -68,6 +79,15 @@ export default function LpExplorer() {
       if (pending.current === controller) { pending.current = null; if (mounted.current) setLoading(false); }
     }
   }, []);
+  useEffect(() => {
+    if (!retrySeconds) return;
+    const update = () => setRetrySeconds(Math.max(0, Math.ceil((retryUntil.current - Date.now()) / 1000)));
+    const timer = setInterval(update, 250);
+    // An interval may skip ticks in a background tab or clock jump. Release at
+    // the absolute deadline as well, without making a background API request.
+    const deadline = setTimeout(update, Math.max(0, retryUntil.current - Date.now()));
+    return () => { clearInterval(timer); clearTimeout(deadline); };
+  }, [retrySeconds]);
   useEffect(() => {
     mounted.current = true;
     // Deferred startup avoids a duplicate request during React's development effect replay.
@@ -88,10 +108,11 @@ export default function LpExplorer() {
     <header className="leaders-hero"><div><p className="leaders-kicker">ONCHAIN RESEARCH / UNISWAP V3 / CHAIN 4663</p><h1>LP Leaders<span>.</span></h1><p>Discover high-fee LP NFTs. Inspect the range, inventory, and lifetime fee record behind each position.</p></div><span className="leaders-badge">Read only · WETH pairs</span></header>
     <div className="leaders-basis"><strong>Fees, not net profit.</strong> Ranks use lifetime fees recorded in WETH only. Other token fees appear separately, without price conversion in the ranking. This is not net profit, APR, or a whole-chain top list.</div>
     <section className="leaders-panel" aria-label="LP NFT leaderboard" aria-busy={loading}>
-      <div className="leaders-toolbar"><div><h2>Observed leaders</h2><p>Rank within the sampled WETH-pair positions</p></div><button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? "Reading chain…" : "Refresh"}</button></div>
+      <div className="leaders-toolbar"><div><h2>Observed leaders</h2><p>Rank within the sampled WETH-pair positions</p></div><button type="button" onClick={() => void refresh()} disabled={loading || retrySeconds > 0}>{loading ? "Reading chain…" : retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Refresh"}</button></div>
+      <p className="leaders-observation"><strong>SHARED VERIFIED SNAPSHOT</strong> · not a live feed; at most 5 minutes old. Revalidated on demand after 90 seconds. Refresh reuses the verified observation while it remains valid.</p>
       {visibleBoard && <><div className="leaders-coverage" data-testid="leader-coverage"><div><strong>{visibleBoard.sampled}<small> / {visibleBoard.totalNfts}</small></strong><span>Observed sample / enumerable NFTs</span></div><div><strong>{visibleBoard.eligible}</strong><span>Eligible</span></div><div><strong>{visibleBoard.excluded}</strong><span>Excluded</span></div><div><strong>{visibleBoard.unsupported}</strong><span>Unsupported</span></div></div><p className="leaders-observation">Stratified enumeration · not newest-only or chain-wide top ranking. Block {visibleBoard.blockNumber} · <time dateTime={visibleBoard.observedAt}>{visibleBoard.observedAt}</time> · automatic expiry, no background RPC polling.</p></>}
       <div className="leaders-controls"><label>Range state<select value={filter} onChange={(event) => { setFilter(event.target.value); setSelected(null); }}><option value="all">All states</option><option value="in-range">In range</option><option value="out">Out of range</option><option value="closed">Closed</option></select></label><label>Sort by<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="fees">WETH fees ↓</option><option value="capital">Inventory ↓</option></select></label><span>{visibleBoard ? `${rows.length} positions shown` : "Ranking withheld until a fresh observation"}</span></div>
-      {loading && <div role="status" className="leaders-empty"><span className="leaders-loading-dot" />Reading public NFT records…<p>No wallet, signature, or token ID required.</p></div>}
+      {loading && !visibleBoard && <div role="status" className="leaders-empty"><span className="leaders-loading-dot" />Reading public NFT records…<p>The first snapshot can take up to 90 seconds. No wallet, signature, or token ID required.</p></div>}
       {error && <div role="alert" className="leaders-error">{error}</div>}
       {visibleBoard && !rows.length && <div role="status" className="leaders-empty">{visibleBoard.rows.length ? "No positions match this range filter." : "No eligible WETH-pair positions in this observation."}<p>{visibleBoard.rows.length ? "Choose All states to see the observed sample." : "An empty sample does not mean there are no LP positions on the chain."}</p></div>}
       {!!rows.length && visibleBoard && <><div className="leaders-column-head" aria-hidden="true"><span>Rank / NFT position</span><span>Recorded WETH fees</span><span>Current LP inventory · WETH</span><span>Range structure / state</span></div><ol className="leaders-list">{rows.map((row, index) => <li key={row.tokenId} data-testid="leader-row"><button className="leaders-row" aria-expanded={selected === row.tokenId} aria-controls={`leader-${row.tokenId}`} aria-label={`Inspect NFT #${row.tokenId}`} onClick={() => setSelected(selected === row.tokenId ? null : row.tokenId)}><span className="leaders-identity"><span className="leaders-rank">{index + 1}</span><span><strong>#{row.tokenId}</strong><small>{row.baseSymbol}/WETH · {number(row.feeTier / 10_000)}% fee tier</small></span></span><span className="leaders-fees"><small className="leaders-mobile-label">Recorded WETH fees</small><strong>{number(row.feeIncomeWeth)}</strong></span><span className="leaders-capital"><small className="leaders-mobile-label">LP inventory · WETH</small>{number(row.capitalWeth)}</span><span className="leaders-range-state"><span>{row.structure}</span><small className={row.rangeState === "in-range" ? "leaders-in" : "leaders-out"}>{stateLabel(row.rangeState)} at observation <b aria-hidden="true">{selected === row.tokenId ? "−" : "+"}</b></small></span></button>{selected === row.tokenId && <LeaderDetails row={row} board={visibleBoard} />}</li>)}</ol></>}

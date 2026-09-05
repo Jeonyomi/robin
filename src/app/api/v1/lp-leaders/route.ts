@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
-import { fetchLpLeaderboard } from "@/lib/sources/uniswap-v3/leaders";
-import { lpSourceDiagnostic } from "@/lib/sources/uniswap-v3/source-error";
+import { fetchSharedLpSnapshot, lpSnapshotPolicy } from "@/lib/sources/uniswap-v3/snapshot";
+import { safeLpUnavailable } from "@/lib/sources/uniswap-v3/availability";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 const headers = { "Cache-Control": "no-store, max-age=0" };
 export async function GET(request: Request) {
   if ([...new URL(request.url).searchParams].length > 0) {
     return NextResponse.json({ data: null, error: "LP discovery does not accept wallet, token ID, or provider parameters." }, { status: 400, headers });
   }
-  try { return NextResponse.json({ data: await fetchLpLeaderboard(), error: null }, { headers }); }
+  try { return NextResponse.json({ data: await fetchSharedLpSnapshot(), error: null, meta: lpSnapshotPolicy }, { headers }); }
   catch (error) {
-    console.warn("LP_LEADERS_SOURCE_FAILURE", JSON.stringify(lpSourceDiagnostic(error)));
-    // The adapter permits only fixed internal messages across this boundary.
-    return NextResponse.json({ data: null, error: error instanceof Error ? error.message : "LP ranking data is unavailable." }, { status: 503, headers });
+    const safe = safeLpUnavailable(error);
+    // Only success snapshots enter the shared cache. Error responses cannot be cached
+    // by a browser/CDN and cannot reset the server's source cooldown or observation time.
+    return NextResponse.json({ data: null, error: safe.message }, { status: safe.limited ? 429 : 503, headers: { ...headers, "Retry-After": String(safe.retryAfterSeconds) } });
   }
 }
