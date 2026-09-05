@@ -33,7 +33,8 @@ export default function LegalPage() {
         </article>
         <article className="panel">
           <h2>Privacy</h2>
-          <p>The application has no user accounts, wallet connection, advertising tracker, or profiling system. It does not intentionally collect wallet ownership claims or personal financial records. Hosting and network providers may process standard request metadata such as IP address, user agent, and timestamps under their own policies and retention practices.</p>
+          <p>The application has no user accounts, wallet connection, advertising tracker, or profiling system. LP Workspace stores only the scenarios you enter in this browser&apos;s local storage. Manual scenario inputs are not sent to the application server, but are not encrypted and can be accessed by other users of the same browser profile. Browser data clearing removes them. JSON exports are local files under your control; imported values remain unverified manual inputs.</p>
+          <p>The onchain inspector sends a public Uniswap v3 NFT position ID to the application server and the official RPC on request. It does not associate the position with your identity or save a portfolio. These requests may appear in standard hosting/RPC logs. LP Workspace scenarios are a fixed-range calculation tool, not onchain portfolio accounting or continuous price monitoring. No wallet signing, trade execution or Telegram alert is performed. Hosting and network providers may process standard request metadata such as IP address, user agent, and timestamps under their own policies and retention practices.</p>
         </article>
         <article className="panel">
           <h2>Availability and liability</h2>
@@ -46,7 +47,7 @@ export default function LegalPage() {
         </article>
       </section>
 
-      <footer className="method-footer">Effective 4 September 2026. Material changes will be reflected in the public repository.</footer>
+      <footer className="method-footer">Effective 5 September 2026. Material changes will be reflected in the public repository.</footer>
     </div>
   );
 }

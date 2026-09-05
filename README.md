@@ -65,6 +65,25 @@ Activity Lens publishes a limited descriptive ranking after an operational gate 
 
 The ranking remains explicitly page-bounded and may be a lower bound for busy tokens. It is not exhaustive, is not comparable across different windows, and is never presented as a price forecast, trade signal, or investment recommendation.
 
+## LP Workspace
+
+`/liquidity` combines a **public Uniswap v3 position inspector** with a separate **browser-local manual scenario workspace**, not a connected LP portfolio. No positions, prices or returns are prefilled. It does not open a wallet, request a signature, move funds, write the database, change collectors or send Telegram messages.
+
+- Up to 50 named base/quote scenarios with entry capital, entry/observed prices and asymmetric lower/upper bounds
+- Uniswap v3-style fixed-liquidity inventory math; LP value versus holding the same starting token quantities
+- Separate no-fee divergence/IL, entered cumulative fees, historical simple fee APR and net PnL after explicit costs
+- Lower/entry/upper hypothetical price scenarios; narrow-range and input-price edge review indicators
+- Manual input timestamps, two-hour stale labeling, and unavailable metrics when fees/costs/history are missing
+- Local JSON export/import with validation, corrupted-storage preservation, storage-write failure handling and cross-tab conflict protection
+
+**Units:** prices are quote tokens per base token. All monetary values are quote units; quote symbols are labels, not verified token identities or USD pegs. Net metrics require explicit fees and costs, and APR is withheld below one elapsed day. No cross-currency totals are summed.
+
+**Model limits:** one deposit, unchanged liquidity and range, entry strictly within bounds. No cash-flow reconstruction, tick rounding, transfer taxes, rebases, v4 hooks, reinvestment or actual NFT/fee-growth accounting. A 5% edge-distance flag is an input-review heuristic, not a volatility-adjusted recommendation. Wider or lower-heavy ranges are not presented as inherently safe.
+
+**On-demand v3 inspector:** a public NFT position ID queries `/api/v1/lp-position`. The fixed official chain-4663 RPC and deployment addresses are checked for network identity, nonempty contract code, manager/factory/pool linkage, token order and block freshness. The response includes observed pool price (not an executable quote), position ticks/range state, public NFT owner, raw liquidity and source block. No wallet association, enumeration, automatic polling or portfolio persistence occurs. The position ID is sent to the server/RPC and may appear in provider request logs.
+
+**Performance remains withheld:** the current index does not establish complete swaps, fee growth or wallet cash-flow history. No live fee amount, APR, IL or PnL is inferred from the snapshot. Automated alerts additionally require a validated live source, authorized destination, deduplication and stale/error gates. See [LP Workspace methodology and readiness](docs/lp-workspace.md).
+
 ## Collection design
 
 The 10-minute sync uses a bounded rotating collector:

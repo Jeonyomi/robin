@@ -36,7 +36,7 @@ test.describe("Asset Registry", () => {
     await page.goto("/stock-tokens");
     await expect(page.getByRole("heading", { name: "Asset Registry" })).toBeVisible();
     // Legend explaining canonical status
-    await expect(page.getByText(/Canonical.*registry/i)).toBeVisible();
+    await expect(page.locator("footer.method-footer")).toContainText("Canonical means the contract address exactly matches");
   });
 
   test("canonical-only filter toggle renders", async ({ page }) => {
@@ -60,10 +60,10 @@ test.describe("Data sources", () => {
   });
 });
 
-test.describe("Watchlist", () => {
-  test("empty watchlist shows guidance", async ({ page }) => {
+test.describe("Legacy Watchlist", () => {
+  test("retired watchlist redirects to the canonical registry", async ({ page }) => {
     await page.goto("/watchlist");
-    await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible();
-    await expect(page.getByText(/watchlist is empty/i)).toBeVisible();
+    await expect(page).toHaveURL(/\/stock-tokens$/);
+    await expect(page.getByRole("heading", { name: "Asset Registry" })).toBeVisible();
   });
 });
