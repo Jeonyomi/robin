@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const database = await tryDatabase(() => getOverviewData(getDb(), window));
     if (database.ok) {
       return NextResponse.json({
-        data: database.data,
+        data: { ...database.data, topTokens: [] },
         meta: {
           window,
           lastUpdatedAt: database.data.lastUpdatedAt,

@@ -32,7 +32,7 @@ const navItems = [
   { href: "/", marker: "01", label: "Overview", description: "Chain and tracked activity" },
   { href: "/stock-tokens", marker: "02", label: "Asset Registry", description: "Canonical contracts" },
   { href: "/capital-flow", marker: "03", label: "Transfers", description: "Raw onchain evidence" },
-  { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Comparison release gate" },
+  { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Observed activity ranking" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

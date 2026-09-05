@@ -61,7 +61,9 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 ### Activity Lens
 
-Cross-token ranking and momentum are fail-closed. They remain withheld until the collector records comparable per-token observation exposure, page truncation, and complete current/prior windows. The page publishes the release gate instead of a provisional score.
+Activity Lens publishes a limited descriptive ranking after an operational gate confirms a completed registry rotation, a healthy index updated within 30 minutes, at least 95% stored-transfer coverage, and observations in the selected window. The index combines 60% relative observed transfer events with 40% relative observed unique addresses; window-over-window change is shown separately.
+
+The ranking remains explicitly page-bounded and may be a lower bound for busy tokens. It is not exhaustive, is not comparable across different windows, and is never presented as a price forecast, trade signal, or investment recommendation.
 
 ## Collection design
 

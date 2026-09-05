@@ -173,14 +173,14 @@ export default function DashboardPage() {
             </article>
           </section>
 
-          <section className="panel comparison-withheld">
+          <section className="panel">
             <div className="panel-heading">
               <div>
-                <p className="section-kicker">COMPARATIVE ANALYSIS</p>
-                <h2>Ranking and momentum withheld</h2>
-                <p>Tokens are collected through rotating and hot-token batches with page limits. Cross-token scores remain hidden until observation exposure and truncation can be compared fairly.</p>
+                <p className="section-kicker">DESCRIPTIVE ACTIVITY</p>
+                <h2>Activity Lens is live</h2>
+                <p>Compare page-bounded transfer events and unique addresses across tracked canonical tokens. Rankings are descriptive lower-bound observations, not price or trade signals.</p>
               </div>
-              <Link className="text-link" href="/opportunities">Read the release gate →</Link>
+              <Link className="text-link" href="/opportunities">Open Activity Lens →</Link>
             </div>
           </section>
 

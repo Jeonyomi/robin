@@ -4,6 +4,7 @@ import {
   calculateActivityIndex,
   calculateMomentum,
   classifyTransfer,
+  evaluateActivityLensRelease,
   normalizeTokenAmount,
   ZERO_ADDRESS,
 } from "@/lib/domain/activity";
@@ -38,5 +39,29 @@ describe("onchain activity domain", () => {
       "+25% transfer count versus previous window",
       "+3 holders at the latest snapshot",
     ]);
+  });
+
+  it("opens the limited Activity Lens only after the operational gate passes", () => {
+    const now = Date.parse("2026-09-05T01:15:00.000Z");
+    const ready = evaluateActivityLensRelease({
+      completedCycles: 7,
+      trackedTokens: 194,
+      tokensWithStoredTransfers: 192,
+      syncStatus: "success",
+      lastIndexedAt: "2026-09-05T01:04:40.112Z",
+      rankedTokens: 12,
+    }, now);
+    expect(ready).toMatchObject({ active: true, status: "active-limited", coveragePct: 99, reasons: [] });
+
+    const stale = evaluateActivityLensRelease({
+      completedCycles: 7,
+      trackedTokens: 194,
+      tokensWithStoredTransfers: 192,
+      syncStatus: "success",
+      lastIndexedAt: "2026-09-05T00:00:00.000Z",
+      rankedTokens: 12,
+    }, now);
+    expect(stale.active).toBe(false);
+    expect(stale.reasons).toContain("Transfer index is stale or has an invalid timestamp");
   });
 });

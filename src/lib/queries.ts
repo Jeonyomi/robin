@@ -7,7 +7,12 @@
  */
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { classifyTransfer } from "@/lib/domain/activity";
+import {
+  buildActivityEvidence,
+  calculateActivityIndex,
+  calculateMomentum,
+  classifyTransfer,
+} from "@/lib/domain/activity";
 import {
   tokens,
   canonicalAssets,
@@ -148,6 +153,19 @@ type TimelineRow = {
   burns: number | string;
 };
 
+type LeaderRow = {
+  token_address: string;
+  symbol: string | null;
+  name: string | null;
+  current_transfers: number | string;
+  previous_transfers: number | string;
+  active_addresses: number | string;
+  holder_count: number | string | null;
+  holder_delta: number | string | null;
+  latest_block: number | string;
+  last_transfer_at: Date | string;
+};
+
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
@@ -224,9 +242,10 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
   const hours = windowHours(window);
   const now = new Date();
   const windowStart = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  const previousStart = new Date(now.getTime() - hours * 2 * 60 * 60 * 1000);
   const zeroAddress = "0x0000000000000000000000000000000000000000";
 
-  const [aggregateResult, timelineResult, recentRows, tokenCounts, stateRows] = await Promise.all([
+  const [aggregateResult, timelineResult, leadersResult, recentRows, tokenCounts, stateRows] = await Promise.all([
     db.execute<AggregateRow>(sql`
       SELECT
         count(*)::int AS transfer_count,
@@ -266,7 +285,38 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
       FROM bucket_counts b LEFT JOIN address_counts a USING (bucket)
       ORDER BY b.bucket
     `),
-
+    db.execute<LeaderRow>(sql`
+      WITH counts AS (
+        SELECT token_address,
+          count(*) FILTER (WHERE timestamp >= ${windowStart})::int AS current_transfers,
+          count(*) FILTER (WHERE timestamp < ${windowStart})::int AS previous_transfers,
+          max(block_number) FILTER (WHERE timestamp >= ${windowStart}) AS latest_block,
+          max(timestamp) FILTER (WHERE timestamp >= ${windowStart}) AS last_transfer_at
+        FROM token_transfers
+        WHERE timestamp >= ${previousStart}
+        GROUP BY token_address
+      ), address_events AS (
+        SELECT token_address, from_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+        UNION
+        SELECT token_address, to_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
+      ), address_counts AS (
+        SELECT token_address, count(DISTINCT address)::int AS active_addresses
+        FROM address_events GROUP BY token_address
+      ), latest_metrics AS (
+        SELECT DISTINCT ON (token_address) token_address, holder_count, holder_delta
+        FROM token_metric_snapshots
+        WHERE "window" = '24h'
+        ORDER BY token_address, calculated_at DESC
+      )
+      SELECT c.token_address, t.symbol, t.name, c.current_transfers, c.previous_transfers,
+        COALESCE(a.active_addresses, 0)::int AS active_addresses,
+        m.holder_count, m.holder_delta, c.latest_block, c.last_transfer_at
+      FROM counts c
+      INNER JOIN tokens t ON t.address = c.token_address
+      LEFT JOIN address_counts a ON a.token_address = c.token_address
+      LEFT JOIN latest_metrics m ON m.token_address = c.token_address
+      WHERE c.current_transfers > 0 AND t.canonical_status = 'CANONICAL'
+    `),
     db.select({
       txHash: tokenTransfers.txHash,
       logIndex: tokenTransfers.logIndex,
@@ -306,6 +356,33 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
   const cycleProgressPct = trackedTokens > 0
     ? Math.round((scannedInCycle / trackedTokens) * 100)
     : 0;
+
+  const rawLeaders = leadersResult.rows.map((row) => ({
+    address: row.token_address,
+    symbol: row.symbol,
+    name: row.name,
+    transferCount: numberValue(row.current_transfers),
+    previousTransferCount: numberValue(row.previous_transfers),
+    activeAddresses: numberValue(row.active_addresses),
+    holderCount: row.holder_count == null ? null : numberValue(row.holder_count),
+    holderDelta: row.holder_delta == null ? null : numberValue(row.holder_delta),
+    latestBlock: numberValue(row.latest_block),
+    lastTransferAt: toIso(row.last_transfer_at) ?? new Date(0).toISOString(),
+  }));
+  const maxTransfers = Math.max(0, ...rawLeaders.map((row) => row.transferCount));
+  const maxAddresses = Math.max(0, ...rawLeaders.map((row) => row.activeAddresses));
+  const topTokens: ActivityTokenRow[] = rawLeaders
+    .map((row) => ({
+      ...row,
+      momentumPct: calculateMomentum(row.transferCount, row.previousTransferCount),
+      activityIndex: calculateActivityIndex(row.transferCount, row.activeAddresses, maxTransfers, maxAddresses),
+      evidence: buildActivityEvidence(row.transferCount, row.previousTransferCount, row.activeAddresses, row.holderDelta),
+    }))
+    .sort((a, b) => b.activityIndex - a.activityIndex
+      || b.transferCount - a.transferCount
+      || b.activeAddresses - a.activeAddresses
+      || a.address.localeCompare(b.address))
+    .slice(0, 12);
 
 
   const lastIndexedAt = toIso(transferState?.lastSuccessAt);
@@ -356,9 +433,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
       mints: numberValue(row.mints),
       burns: numberValue(row.burns),
     })),
-    // Comparative ranking is fail-closed until per-token observation exposure
-    // and truncation can be normalized across rotating and hot-token batches.
-    topTokens: [],
+    topTokens,
     recentTransfers: recentRows.map((row) => ({
       ...row,
       normalizedValue: row.normalizedValue ?? null,
@@ -369,7 +444,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
       scope: "Bounded rotating sample of canonical Robinhood Chain token transfers",
       completeness: completedCycles > 0 ? "cycle-complete" : "partial",
       syntheticExcluded: true,
-      note: "Counts are page-bounded event observations for tracked canonical tokens and may be lower bounds. Cross-token ranking and momentum are withheld because collection exposure is not yet comparable.",
+      note: "Counts and rankings are page-bounded observations for tracked canonical tokens and may be lower bounds. They are descriptive, not exhaustive or predictive.",
     },
     lastUpdatedAt,
   };

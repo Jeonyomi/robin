@@ -17,14 +17,14 @@ export async function GET(request: Request) {
     const database = await tryDatabase(() => getOverviewData(getDb(), window));
     if (database.ok) {
       return NextResponse.json({
-        data: database.data,
+        data: { ...database.data, topTokens: [] },
         meta: {
           window,
           sources: ["blockscout-direct", "robinhood-assets"],
           lastUpdatedAt: database.data.lastUpdatedAt,
-          calculationVersion: "observation-v3",
+          calculationVersion: "observation-v4",
           methodology: "page-bounded-descriptive-observation",
-          comparativeRanking: "withheld",
+          comparativeRanking: "available-via-activity-lens-gate",
           servedFrom: "neon-postgres",
         },
       });
@@ -39,9 +39,9 @@ export async function GET(request: Request) {
           window,
           sources: ["blockscout-direct", "robinhood-assets"],
           lastUpdatedAt: snap?.builtAt ?? new Date().toISOString(),
-          calculationVersion: "observation-v3",
+          calculationVersion: "observation-v4",
           methodology: "page-bounded-descriptive-observation",
-          comparativeRanking: "withheld",
+          comparativeRanking: "available-via-activity-lens-gate",
           servedFrom: "snapshot",
           degraded: database.attempted,
         },
