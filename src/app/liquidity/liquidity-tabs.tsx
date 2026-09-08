@@ -5,7 +5,7 @@ import LpExplorer from "./explorer";
 import StockPairs from "./stock-pairs";
 import "./stock-pairs.css";
 
-const tabs = [{ id: "leaders", label: "LP Leaders", hash: "lp-leaders" }, { id: "pairs", label: "Meme / Stock Pairs", hash: "stock-pairs" }] as const;
+const tabs = [{ id: "pairs", label: "Meme / Stock Pairs", hash: "stock-pairs" }, { id: "leaders", label: "LP Leaders", hash: "lp-leaders" }] as const;
 type Tab = (typeof tabs)[number]["id"];
 
 export default function LiquidityTabs() {
@@ -13,7 +13,7 @@ export default function LiquidityTabs() {
   const [active, setActive] = useState<Tab | null>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   useEffect(() => {
-    const syncHash = () => setActive(window.location.hash === "#stock-pairs" ? "pairs" : "leaders");
+    const syncHash = () => setActive(window.location.hash === "#lp-leaders" ? "leaders" : "pairs");
     syncHash();
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
