@@ -1,6 +1,6 @@
 # Metrics Reference
 
-This document defines the metrics used in Robin's operating dashboard. All metrics are descriptive observations unless explicitly stated otherwise.
+This document defines the metrics used in Robinwatch's operating dashboard. All metrics are descriptive observations unless explicitly stated otherwise.
 
 ## Scope labels
 
@@ -10,7 +10,7 @@ A point-in-time value returned by Blockscout `/api/v2/stats`. These values descr
 
 ### Tracked-token sample
 
-A value calculated from transfers stored by Robin's bounded rotating collector. These values do not represent a full archival scan and can be lower bounds.
+A value calculated from transfers stored by Robinwatch's bounded rotating collector. These values do not represent a full archival scan and can be lower bounds.
 
 ## Chain-wide metrics
 
@@ -66,7 +66,7 @@ A value calculated from transfers stored by Robin's bounded rotating collector. 
 ### Active tokens
 
 - **Formula:** `COUNT(DISTINCT token_address)` in the selected window
-- **Scope:** canonical assets stored in Robin's registry
+- **Scope:** canonical assets stored in Robinwatch's registry
 
 ### Mint events
 
@@ -146,7 +146,7 @@ Properties:
 
 ## Metrics deliberately not asserted
 
-Until decoded and independently validated, Robin does not label raw transfers as:
+Until decoded and independently validated, Robinwatch does not label raw transfers as:
 
 - DEX buy or sell volume
 - Bridge inflow or outflow

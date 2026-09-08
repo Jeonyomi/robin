@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Legal, privacy and data use",
-  description: "Terms, privacy, attribution, and methodology boundaries for Robin Onchain Observatory.",
+  description: "Terms, privacy, attribution, and methodology boundaries for Robinwatch Onchain Observatory.",
   alternates: { canonical: "/legal" },
 };
 
@@ -20,7 +20,7 @@ export default function LegalPage() {
       <section className="legal-grid">
         <article className="panel">
           <h2>Independent project</h2>
-          <p>Robin is an independent research project with publicly viewable source code. It is not affiliated with, sponsored by, or endorsed by Robinhood Markets, Inc. Robinhood names and marks belong to their respective owners.</p>
+          <p>Robinwatch is an independent research project with publicly viewable source code. It is not affiliated with, sponsored by, or endorsed by Robinhood Markets, Inc. Robinhood names and marks belong to their respective owners.</p>
         </article>
         <article className="panel">
           <h2>Informational use only</h2>

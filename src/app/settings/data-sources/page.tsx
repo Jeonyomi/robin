@@ -8,6 +8,10 @@ type SourceHealth = {
   status: string;
   lastSuccessAt: string | null;
   lastError: string | null;
+  observedAt?: string | null;
+  lastAttemptAt?: string | null;
+  lastAttemptOk?: boolean | null;
+  usable?: boolean;
 };
 
 const sourceNotes: Record<string, string> = {
@@ -15,12 +19,14 @@ const sourceNotes: Record<string, string> = {
   "Blockscout Chain Stats": "Chain-wide block, transaction, address, and utilization snapshot.",
   "Blockscout Gas Price": "Slow, standard, and fast suggested prices in Gwei per gas unit. Stored separately so a lagging block total cannot suppress a newer gas observation.",
   "Blockscout Token Transfers": "Page-bounded transfer observations for rotating canonical-token batches.",
+  "Uniswap V3 LP Snapshot": "Separately collected NFT observations stored in Neon. A failed latest attempt can coexist with a usable observation; observations older than five minutes are withheld. This page never starts RPC collection.",
   Database: "Operational source of truth shared by the indexer and dashboard.",
 };
 
 function relativeTime(value: string | null) {
   if (!value) return "No successful observation yet";
   const delta = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(delta) || delta < 0) return "Invalid observation time";
   if (delta < 60_000) return "Less than a minute ago";
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} minutes ago`;
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} hours ago`;
@@ -33,7 +39,10 @@ export default function DataSourcesPage() {
 
   useEffect(() => {
     fetch("/api/v1/source-health")
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) throw new Error("Source health unavailable");
+        return response.json();
+      })
       .then((payload) => {
         setSources(payload.data?.sources || []);
         setStatus(payload.data?.overallStatus || "unknown");
@@ -44,7 +53,7 @@ export default function DataSourcesPage() {
   return (
     <div className="page-shell">
       <header className="section-hero">
-        <div><p className="eyebrow">PROVENANCE & FRESHNESS</p><h1>Data Sources</h1><p>What Robin collects, where it comes from, and how recently each source was observed.</p></div>
+        <div><p className="eyebrow">PROVENANCE & FRESHNESS</p><h1>Data Sources</h1><p>What Robinwatch collects, where it comes from, and how recently each source was observed.</p></div>
         <div className="registry-count"><span className={`status-dot ${status === "healthy" ? "status-dot-live" : "status-dot-warn"}`} /><strong className="source-status-word">{status}</strong></div>
       </header>
 
@@ -54,7 +63,13 @@ export default function DataSourcesPage() {
             <div className="source-card-head"><span className={`status-dot ${source.status === "healthy" ? "status-dot-live" : "status-dot-warn"}`} /><span>{source.status}</span></div>
             <h2>{source.name}</h2>
             <p>{sourceNotes[source.name] || "Operational data source."}</p>
-            <dl><div><dt>Last success</dt><dd>{relativeTime(source.lastSuccessAt)}</dd></div><div><dt>Endpoint</dt><dd>{source.url}</dd></div></dl>
+            <dl>
+              <div><dt>{source.name === "Database" ? "Last read" : source.observedAt !== undefined ? "Last published" : "Last success"}</dt><dd>{relativeTime(source.lastSuccessAt)}</dd></div>
+              {source.observedAt !== undefined && <div><dt>Source observation</dt><dd>{source.observedAt ? relativeTime(source.observedAt) : "No stored observation"}</dd></div>}
+              {source.lastAttemptAt && <div><dt>Latest attempt</dt><dd>{relativeTime(source.lastAttemptAt)} · {source.lastAttemptOk === true ? "Succeeded" : source.lastAttemptOk === false ? "Failed" : "Unknown"}</dd></div>}
+              {source.usable !== undefined && <div><dt>Within freshness limit</dt><dd>{source.usable ? "Yes" : "No"}</dd></div>}
+              <div><dt>Endpoint</dt><dd>{source.url}</dd></div>
+            </dl>
             {source.lastError && <div className="source-error">{source.lastError}</div>}
           </article>
         ))}

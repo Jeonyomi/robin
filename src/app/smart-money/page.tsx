@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function WalletIntelligencePage() {
   return (
     <div className="page-shell">
-      <header className="section-hero"><div><p className="eyebrow">RESEARCH MODULE · DISABLED</p><h1>Wallet Intelligence</h1><p>Robin does not label wallets as smart money without validated trade decoding, pricing, and attribution evidence.</p></div></header>
+      <header className="section-hero"><div><p className="eyebrow">RESEARCH MODULE · DISABLED</p><h1>Wallet Intelligence</h1><p>Robinwatch does not label wallets as smart money without validated trade decoding, pricing, and attribution evidence.</p></div></header>
       <section className="panel disabled-module">
         <span className="method-chip">Not in operating path</span>
         <h2>Why this view is disabled</h2>

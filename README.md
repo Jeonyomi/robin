@@ -1,6 +1,8 @@
-# Robin · Robinhood Chain Onchain Observatory
+# Robinwatch · Robinhood Chain Onchain Observatory
 
-Robin collects free, publicly available Robinhood Chain data, stores the raw observations, and turns them into source-labeled descriptive analysis.
+Robinwatch collects free, publicly available Robinhood Chain data, stores the raw observations, and turns them into source-labeled descriptive analysis.
+
+**Web app:** https://robinwatch-mu.vercel.app/
 
 > Independent public-source research project. Not affiliated with or endorsed by Robinhood Markets, Inc. The product does not provide investment advice, trade execution, or predictive signals.
 
@@ -8,7 +10,7 @@ Robin collects free, publicly available Robinhood Chain data, stores the raw obs
 
 **What is changing on Robinhood Chain, where is observable activity concentrated, and what raw evidence supports that view?**
 
-Robin answers this in three layers:
+Robinwatch answers this in three layers:
 
 1. **Chain state**: public Blockscout network statistics.
 2. **Tracked assets**: Robinhood's canonical asset registry matched by contract address.
@@ -23,7 +25,7 @@ The dashboard keeps chain-wide statistics separate from the rotating tracked-tok
 | Robinhood Assets API | Canonical asset IDs, symbols, contracts, multipliers, status | Public registry |
 | Robinhood Price API | Reference bid/ask observations | Canonical assets where available |
 | Robinhood Chain Blockscout direct API | Chain stats, token metadata/counters, token transfers | Free public endpoint |
-| Robinhood Chain RPC | Configured for future log-level validation | Not yet the primary indexer |
+| Robinhood Chain RPC | Anchored Uniswap v3 NFT state, fee logs and mint receipts | Bounded, separately collected LP sample |
 
 Default Blockscout base URL:
 
@@ -74,11 +76,13 @@ The ranking remains explicitly page-bounded and may be a lower bound for busy to
 - Native fee amounts, price bounds, range structure, mint date, liquidity-change and collection counts, source contract links
 - Full returned fee-event history reconciled against live liquidity; withdrawn principal excluded from fee amounts
 - Mint receipt verification, same-block pool/fee-growth reads, contract provenance and freshness gates
-- No wallet, signature, token-ID entry, trade, database write, collector change or Telegram alert
+- Public page requests need no wallet, signature or token-ID entry and trigger no trade, database write, RPC collection or Telegram alert
 
 **Ranking boundary:** WETH fees are the WETH token leg only; other token fees remain separate. Illiquid pool-price conversion cannot inflate the fee rank. The illustrative all-token fee estimate and current inventory use pool spot prices and are not executable or USD values. NPM recorded fee entitlement can differ slightly from received cash due to raw-unit rounding; lifetime fees include previous owners and favor older/larger NFTs. This is not net PnL, APR/APY, a 24-hour return or a whole-chain top list. Burned and unsampled NFTs are absent.
 
-The public RPC is rate-limited and not recommended by its operator for production-scale use. Reads are paced, bounded, deduplicated and fail closed; only bytecode-verified Multicall view calls are grouped. Stale/failed data is not replaced with invented rows. Legacy browser-local scenarios remain untouched and are never uploaded or treated as chain data.
+The independent LP collector publishes verified observations to a dedicated Neon snapshot row about every two minutes. The public page and `GET /api/v1/lp-leaders` read only that stored snapshot; refreshing the page does not consume RPC quota. Source observations older than five minutes are withheld. The latest collection attempt is reported separately: a failed attempt does not refresh the last successful observation or prevent it being read while still inside the hard freshness limit.
+
+The public RPC is rate-limited and not recommended by its operator for production-scale use. Collector reads are paced, bounded, deduplicated and fail closed; only bytecode-verified Multicall view calls are grouped. Rate-limit cooldowns persist between collection runs. Missing or expired observations are not replaced with invented rows. Freshness depends on the separate collector host remaining available, not on Vercel alone. Legacy browser-local scenarios remain untouched and are never uploaded or treated as chain data.
 
 See [LP Leaders methodology and source limits](docs/lp-workspace.md). The older read-only `/api/v1/lp-position` endpoint remains available for compatibility but is no longer the page's user flow.
 
@@ -146,6 +150,7 @@ Robinhood APIs     Blockscout direct API
 - Vercel deployment
 - Optional Vercel Blob read fallback
 - Windows Task Scheduler for 10-minute collection with overlapping runs blocked
+- Separate two-minute LP collector, dedicated Neon snapshot storage, and storage-only public LP reads
 
 ## Local setup
 
@@ -181,8 +186,8 @@ DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 - Missing observations stay `null`; they are not converted to zero.
 - Synthetic activity is excluded from the operating path.
 - Collection status, source, scope, and freshness are visible in the UI.
-- Partial source failures are recorded as degraded state.
-- Snapshot publication is blocked when a required sync job fails.
+- Partial source failures are recorded as degraded state; `/api/v1/source-health` reports the same overall status in its data and metadata, including LP freshness and the latest collection attempt.
+- Activity snapshot publication requires the transfer job to succeed; a stats failure can retain prior stats with their original timestamps. LP publication requires a verified, non-regressing observation; failures update attempt metadata, not the accepted observation.
 - Activity is not labeled as demand, volume, profit, or investment opportunity.
 
 ## Known limitations
@@ -194,6 +199,7 @@ DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 - Wallet ownership, PnL, and "smart money" labels are not asserted.
 - The dashboard is batch-updated rather than realtime.
 - The free Blockscout instance can rate-limit or temporarily fail.
+- The LP collector can also encounter RPC rate limits. Web deployment does not repair external API availability or keep a stopped collector running.
 
 ## Verification
 

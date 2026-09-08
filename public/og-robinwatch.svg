@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Robinwatch</title>
+  <desc id="desc">Evidence-first analytics for Robinhood Chain. Assets, transfers and LP research. Independent public-source project.</desc>
+  <rect width="1200" height="630" fill="#09131c"/>
+  <path d="M72 72H1128M72 538H1128" stroke="#31414b"/>
+  <rect x="72" y="106" width="58" height="58" rx="14" fill="#c3e9b8"/>
+  <g font-family="DejaVu Sans, sans-serif">
+    <text x="87" y="147" font-size="38" font-weight="700" fill="#13251b">R</text>
+    <text x="150" y="145" font-size="38" font-weight="700" fill="#f2f6f3">Robinwatch</text>
+    <text x="72" y="247" font-size="18" letter-spacing="3" fill="#a8c79f">ROBINHOOD CHAIN ONCHAIN OBSERVATORY</text>
+    <text x="68" y="323" font-size="64" font-weight="700" letter-spacing="-2" fill="#f2f6f3">Evidence-first analytics.</text>
+    <text x="72" y="380" font-size="28" fill="#bbc6cb">Trace the activity. Inspect the evidence.</text>
+    <text x="72" y="471" font-size="23" fill="#deeadf">Asset registry</text>
+    <text x="280" y="471" font-size="23" fill="#698174">/</text>
+    <text x="316" y="471" font-size="23" fill="#deeadf">Raw transfers</text>
+    <text x="518" y="471" font-size="23" fill="#698174">/</text>
+    <text x="554" y="471" font-size="23" fill="#deeadf">LP research</text>
+    <text x="72" y="582" font-size="18" fill="#a2afb5">Independent public-source project. Not affiliated with Robinhood.</text>
+  </g>
+</svg>

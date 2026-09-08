@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-Robin is a source-labeled onchain observation system for Robinhood Chain. The operating path collects public data, preserves raw identifiers, computes descriptive aggregates, and exposes the evidence in a dashboard.
+Robinwatch is a source-labeled onchain observation system for Robinhood Chain. The operating path collects public data, preserves raw identifiers, computes descriptive aggregates, and exposes the evidence in a dashboard.
 
 It is not a full archival indexer, trading engine, investment adviser, or wallet-attribution service.
 

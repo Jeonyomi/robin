@@ -8,22 +8,24 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const metadata: Metadata = {
   metadataBase: new URL("https://robinwatch-mu.vercel.app"),
   title: {
-    default: "Robin · Robinhood Chain Onchain Observatory",
-    template: "%s · Robin Onchain Observatory",
+    default: "Robinwatch · Robinhood Chain Onchain Observatory",
+    template: "%s · Robinwatch Onchain Observatory",
   },
   description: "Independent, source-labeled observations of public Robinhood Chain data. Bounded samples, raw evidence, and explicit limits; no investment signals.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: "/",
-    title: "Robin · Robinhood Chain Onchain Observatory",
+    title: "Robinwatch · Robinhood Chain Onchain Observatory",
     description: "Independent, source-labeled observations of public Robinhood Chain data.",
-    siteName: "Robin Onchain Observatory",
+    siteName: "Robinwatch Onchain Observatory",
+    images: [{ url: "/og-robinwatch.png", width: 1200, height: 630, alt: "Robinwatch: Evidence-first analytics for Robinhood Chain" }],
   },
   twitter: {
-    card: "summary",
-    title: "Robin · Robinhood Chain Onchain Observatory",
+    card: "summary_large_image",
+    title: "Robinwatch · Robinhood Chain Onchain Observatory",
     description: "Independent, source-labeled observations of public Robinhood Chain data.",
+    images: [{ url: "/og-robinwatch.png", alt: "Robinwatch: Evidence-first analytics for Robinhood Chain" }],
   },
   robots: { index: true, follow: true },
 };
@@ -45,7 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <aside className="app-sidebar">
             <Link href="/" className="brand-block">
               <span className="brand-mark">R</span>
-              <span><strong>Robin</strong><small>Onchain Observatory</small></span>
+              <span><strong>Robinwatch</strong><small>Onchain Observatory</small></span>
             </Link>
 
             <nav className="primary-nav" aria-label="Primary navigation">
