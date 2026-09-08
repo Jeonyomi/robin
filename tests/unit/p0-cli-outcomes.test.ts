@@ -3,14 +3,15 @@ import { runActivityPulse } from "../../scripts/lib/activity-pulse";
 
 const jobs = vi.hoisted(() => ({
   canonical: vi.fn(), stats: vi.fn(), metadata: vi.fn(), prices: vi.fn(),
-  transfers: vi.fn(), metrics: vi.fn(), actions: vi.fn(), signals: vi.fn(), snapshot: vi.fn(),
+  transfers: vi.fn(), legacyTransfers: vi.fn(), metrics: vi.fn(), actions: vi.fn(), signals: vi.fn(), snapshot: vi.fn(),
 }));
 vi.mock("dotenv/config", () => ({}));
 vi.mock("@/lib/jobs/sync-canonical-assets", () => ({ syncCanonicalAssets: jobs.canonical }));
 vi.mock("@/lib/jobs/sync-chain-stats", () => ({ syncChainStats: jobs.stats }));
 vi.mock("@/lib/jobs/sync-token-metadata", () => ({ syncTokenMetadata: jobs.metadata }));
 vi.mock("@/lib/jobs/sync-reference-prices", () => ({ syncReferencePrices: jobs.prices }));
-vi.mock("@/lib/jobs/sync-token-transfers", () => ({ syncTokenTransfers: jobs.transfers }));
+vi.mock("@/lib/jobs/sync-token-transfers", () => ({ syncTokenTransfers: jobs.legacyTransfers }));
+vi.mock("@/lib/jobs/sync-rpc-transfers", () => ({ syncRpcTransfers: jobs.transfers }));
 vi.mock("@/lib/jobs/calculate-metrics", () => ({ calculateTokenMetrics: jobs.metrics }));
 vi.mock("@/lib/jobs/generate-economic-actions", () => ({ generateEconomicActions: jobs.actions }));
 vi.mock("@/lib/jobs/generate-signals", () => ({ generateSignals: jobs.signals }));
@@ -48,6 +49,15 @@ afterEach(() => {
 });
 
 describe("real sync CLI resolved source outcomes (offline I/O boundaries)", () => {
+  it("uses RPC transfers by default and legacy only with explicit operator command", async () => {
+    expect(await dispatch("transfers")).toBe(0);
+    expect(jobs.transfers).toHaveBeenCalledOnce();
+    expect(jobs.legacyTransfers).not.toHaveBeenCalled();
+    jobs.legacyTransfers.mockResolvedValue({ tokensSucceeded: 0, tokensFailed: 1 });
+    expect(await dispatch("transfers-blockscout")).toBe(1);
+    expect(jobs.legacyTransfers).toHaveBeenCalledOnce();
+    expect(jobs.transfers).toHaveBeenCalledOnce();
+  });
   it("dispatches snapshot to the publisher", async () => {
     expect(await dispatch("snapshot")).toBe(0);
     expect(jobs.snapshot).toHaveBeenCalledOnce();

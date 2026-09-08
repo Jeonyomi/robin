@@ -119,6 +119,14 @@ export interface OverviewData {
     observedTokensInWindow?: number;
     /** Missing on legacy snapshots; absence must fail closed. */
     observationExposureVerified?: boolean;
+    source?: string;
+    activeSource?: string;
+    collectionMode?: string;
+    scanFromBlock?: number;
+    scannedToBlock?: number;
+    skippedBlocks?: number;
+    scannedAt?: string | null;
+    latestTransferAt?: string | null;
     scannedInCycle: number;
     completedCycles: number;
     cycleProgressPct: number;
@@ -351,11 +359,15 @@ export async function getOverviewData(
       cursor: sourceSyncState.cursor,
       lastSuccessAt: sourceSyncState.lastSuccessAt,
       status: sourceSyncState.status,
-    }).from(sourceSyncState).where(eq(sourceSyncState.source, "blockscout")),
+      source: sourceSyncState.source,
+    }).from(sourceSyncState).where(inArray(sourceSyncState.source, ["blockscout", "rpc"])),
   ]);
 
   const aggregate = aggregateResult.rows[0];
-  const transferState = stateRows.find((row) => row.jobName === "token-transfers");
+  const rpcState = stateRows.find((row) => row.source === "rpc" && row.jobName === "token-transfers");
+  const legacyState = stateRows.find((row) => row.source === "blockscout" && row.jobName === "token-transfers");
+  const transferState = rpcState?.lastSuccessAt ? rpcState : legacyState;
+  const rpcCursor = transferState?.source === "rpc" ? objectValue(transferState.cursor) : null;
   const statsState = stateRows.find((row) => row.jobName === "chain-stats");
   const gasState = stateRows.find((row) => row.jobName === "gas-prices");
   const cursor = parseTransferCursor(transferState?.cursor);
@@ -429,6 +441,15 @@ export async function getOverviewData(
       lastObservedAt: toIso(aggregate?.last_observed_at),
     },
     coverage: {
+      ...(transferState ? { source: transferState.source } : {}),
+      ...(rpcCursor?.collectionMode === "bounded-recent-rpc" ? {
+        collectionMode: "bounded-recent-rpc",
+        scanFromBlock: numberValue(rpcCursor.scanFromBlock),
+        scannedToBlock: numberValue(rpcCursor.scannedToBlock),
+        skippedBlocks: numberValue(rpcCursor.skippedBlocks),
+        scannedAt: typeof rpcCursor.scannedAt === "string" ? toIso(rpcCursor.scannedAt) : null,
+        latestTransferAt: typeof rpcCursor.latestTransferAt === "string" ? toIso(rpcCursor.latestTransferAt) : null,
+      } : {}),
       trackedTokens,
       tokensWithStoredTransfers,
       observedTokensInWindow: tokensWithStoredTransfers,
@@ -440,7 +461,8 @@ export async function getOverviewData(
       cycleProgressPct,
       lastBatchSize: cursor.lastBatchSize,
       lookbackHours: cursor.lookbackHours,
-      status: transferState?.status ?? "not-started",
+      activeSource: rpcState ? "rpc" : transferState?.source,
+      status: (rpcState ?? transferState)?.status ?? "not-started",
       lastIndexedAt,
     },
     timeline: timelineResult.rows.map((row) => ({
@@ -458,10 +480,14 @@ export async function getOverviewData(
       timestamp: toIso(row.timestamp) ?? new Date(0).toISOString(),
     })),
     dataQuality: {
-      scope: "Bounded rotating sample of canonical Robinhood Chain token transfers",
+      scope: rpcCursor?.collectionMode === "bounded-recent-rpc"
+        ? "Bounded recent RPC sample with mixed historical Blockscout/RPC transfer observations"
+        : "Bounded rotating sample of canonical Robinhood Chain token transfers",
       completeness: "partial",
       syntheticExcluded: true,
-      note: "Counts are page-bounded observations and may be lower bounds. Observed-token counts use the current canonical registry and selected window; they are not scan completeness. Continuous observation exposure is unverified, so comparative Activity Lens rankings are withheld.",
+      note: rpcCursor?.collectionMode === "bounded-recent-rpc"
+        ? "RPC scans cover at most 48 recent blocks per pulse, not the full interval. Gaps are not backfilled; pre-bootstrap coverage is unknown. Historical counts mix Blockscout and RPC observations. Observed-token share is not scan completeness. Continuous observation exposure remains unverified and Activity Lens rankings are withheld."
+        : "Counts are page-bounded observations and may be lower bounds. Observed-token counts use the current canonical registry and selected window; they are not scan completeness. Continuous observation exposure is unverified, so comparative Activity Lens rankings are withheld.",
     },
     lastUpdatedAt,
   };
@@ -759,6 +785,8 @@ export interface SyncStateRow {
   jobName: string;
   lastSuccessAt: string | null;
   lastError: string | null;
+  lastStartedAt?: string | null;
+  status?: string | null;
 }
 
 export async function getSyncStatesData(db: Db): Promise<SyncStateRow[]> {
@@ -768,5 +796,7 @@ export async function getSyncStatesData(db: Db): Promise<SyncStateRow[]> {
     jobName: r.jobName,
     lastSuccessAt: toIso(r.lastSuccessAt),
     lastError: r.lastError,
+    lastStartedAt: toIso(r.lastStartedAt),
+    status: r.status,
   }));
 }

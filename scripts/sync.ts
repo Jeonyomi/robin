@@ -8,7 +8,8 @@
  *   pnpm sync stats      # Blockscout chain-wide public statistics
  *   pnpm sync metadata   # rotating Blockscout token metadata batch
  *   pnpm sync prices     # Robinhood reference prices
- *   pnpm sync transfers  # bounded real token-transfer ingestion
+ *   pnpm sync transfers  # bounded recent RPC token-transfer observations
+ *   pnpm sync transfers-blockscout # explicit legacy operator path
  *   pnpm sync metrics    # compute holder deltas from source observations
  *   pnpm sync snapshot   # publish the current persisted snapshot to Blob
  *   pnpm sync watch      # run all jobs on an interval (5 min)
@@ -19,6 +20,7 @@ import { syncChainStats } from "@/lib/jobs/sync-chain-stats";
 import { syncTokenMetadata } from "@/lib/jobs/sync-token-metadata";
 import { syncReferencePrices } from "@/lib/jobs/sync-reference-prices";
 import { syncTokenTransfers } from "@/lib/jobs/sync-token-transfers";
+import { syncRpcTransfers } from "@/lib/jobs/sync-rpc-transfers";
 import { calculateTokenMetrics } from "@/lib/jobs/calculate-metrics";
 import { generateEconomicActions } from "@/lib/jobs/generate-economic-actions";
 import { generateSignals } from "@/lib/jobs/generate-signals";
@@ -48,6 +50,9 @@ async function run(jobName: string): Promise<boolean> {
         result = await syncReferencePrices();
         break;
       case "transfers":
+        result = await syncRpcTransfers();
+        break;
+      case "transfers-blockscout":
         result = await syncTokenTransfers();
         break;
       case "metrics":
@@ -79,7 +84,7 @@ async function run(jobName: string): Promise<boolean> {
       const outcome = result as Record<string, unknown>;
       const positive = (key: string) => typeof outcome[key] === "number" && outcome[key] > 0;
       const degraded =
-        (jobName === "transfers" && (positive("tokensFailed") || positive("tokensSkipped") || outcome.tokensSucceeded === 0)) ||
+        (["transfers", "transfers-blockscout"].includes(jobName) && (positive("tokensFailed") || positive("tokensSkipped") || outcome.tokensSucceeded === 0)) ||
         (jobName === "metadata" && (positive("errors") || outcome.enriched === 0)) ||
         (jobName === "prices" && (positive("errors") || outcome.stored === 0)) ||
         (jobName === "canonical" && outcome.processed === 0) ||

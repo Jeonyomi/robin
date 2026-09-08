@@ -22,6 +22,7 @@ function storedHealth(state: SyncStateRow | undefined, now: number, maxAgeHours 
     // A failed first attempt is degraded, not an unobserved/unknown source.
     status: state?.lastError ? "degraded" : !state?.lastSuccessAt ? "unknown" : fresh ? "healthy" : "degraded",
     lastSuccessAt,
+    lastAttemptAt: state?.lastStartedAt ?? null,
     // Stored upstream errors can contain provider URLs or credentials.
     lastError: state?.lastError
       ? "Latest collector attempt failed."
@@ -56,6 +57,7 @@ export async function GET() {
     const robinhoodState = findState("robinhood", "canonical-assets");
     const blockscoutStatsState = findState("blockscout", "chain-stats");
     const gasState = findState("blockscout", "gas-prices");
+    const rpcTransferState = findState("rpc", "token-transfers");
     const transferState = findState("blockscout", "token-transfers");
     const databaseStatus = database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable";
 
@@ -100,6 +102,11 @@ export async function GET() {
         name: "Blockscout Token Transfers",
         url: "https://robinhoodchain.blockscout.com/api/v2/tokens/{address}/transfers",
         ...storedHealth(transferState, now),
+      },
+      {
+        name: "RPC Token Transfers",
+        url: "Configured chain RPC (chain 4663)",
+        ...storedHealth(rpcTransferState, now),
       },
       {
         name: "Database",

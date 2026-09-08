@@ -28,7 +28,7 @@ export default function LegalPage() {
         </article>
         <article className="panel">
           <h2>Sources and limits</h2>
-          <p>Canonical asset references come from Robinhood&apos;s public asset endpoint. Chain statistics, contract metadata, and transfer logs come from Blockscout. Collection is rotating, page-bounded, batch-updated, and may be incomplete, delayed, duplicated across retries, or affected by upstream changes and chain reorganizations.</p>
+          <p>Canonical asset references come from Robinhood&apos;s public asset endpoint. Chain statistics and contract metadata come from Blockscout. Stored transfer history mixes earlier Blockscout observations with RPC transfer collection; individual rows do not carry source attribution. RPC collection samples at most 48 recent blocks per pulse, with a 128-block safety offset that is not a finality guarantee. This is not continuous indexing; gaps are not backfilled and pre-bootstrap coverage is unknown. Collection may be incomplete, delayed, or affected by upstream changes and chain reorganizations.</p>
           <p>LP Leaders ranks a small observed NFT sample by lifetime recorded WETH fees only, not total profit or investment return. Principal withdrawals are excluded; other token fees and spot-valued inventory are separate. Records may span previous owners. Pool prices can be manipulated or illiquid, and NPM accounting can differ from exact received cash. No global top ranking, APR/APY, token safety or executable price is asserted. Use of upstream data remains subject to provider terms and policies.</p>
         </article>
         <article className="panel">
@@ -48,7 +48,7 @@ export default function LegalPage() {
         </article>
       </section>
 
-      <footer className="method-footer">Effective 8 September 2026. Material changes will be reflected in the public repository.</footer>
+      <footer className="method-footer">Effective 9 September 2026. Material changes will be reflected in the public repository.</footer>
     </div>
   );
 }

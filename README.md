@@ -16,11 +16,11 @@ Robinwatch answers this in three layers:
 
 1. **Chain state**: public Blockscout network statistics.
 2. **Tracked assets**: Robinhood's canonical asset registry matched by contract address.
-3. **Observed activity**: page-bounded token transfer events, unique addresses, and mint/burn events.
+3. **Observed activity**: bounded RPC and historical Blockscout token transfer events, unique addresses, and mint/burn events.
 
 Separate liquidity and token-discovery views add provider-reported market observations and bounded onchain LP evidence. They are not derived from transfer counts or merged into chain-wide totals.
 
-The dashboard keeps chain-wide statistics separate from the rotating tracked-token sample. Missing data remains unavailable rather than being replaced with synthetic values.
+The dashboard keeps chain-wide statistics separate from bounded tracked-token observations. Missing data remains unavailable rather than being replaced with synthetic values.
 
 ## Current free sources
 
@@ -28,7 +28,8 @@ The dashboard keeps chain-wide statistics separate from the rotating tracked-tok
 |---|---|---|
 | Robinhood Assets API | Canonical asset IDs, symbols, contracts, multipliers, status | Public registry |
 | Robinhood Price API | Reference bid/ask observations | Canonical assets where available |
-| Robinhood Chain Blockscout direct API | Chain stats, token metadata/counters, token transfers | Free public endpoint |
+| Robinhood Chain Blockscout direct API | Chain stats, token metadata/counters, historical transfer observations | Free public endpoint; legacy transfer path retained |
+| Robinhood Chain RPC | Verified ERC20 transfer logs and block timestamps | Up to 48 recent blocks per pulse; not continuous indexing |
 | Robinhood Chain RPC | Anchored Uniswap v3 NFT state, fee logs and mint receipts | Bounded, separately collected LP sample |
 | Robinhood Chain RPC | Verified Uniswap v3/v4 pool state and related NFT inspection | Bounded, on-demand Meme / Stock Pairs reads |
 | DEX Screener public API | Candidate stock/non-stock pools and reported market metrics | Fixed stock basket; provider-limited discovery |
@@ -50,9 +51,9 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 - Blockscout slow, standard, and fast suggested gas prices in Gwei per gas unit, with independent freshness, no additional API request, and an explicit total-fee caveat
 - Stored transfer events in the selected window
 - Unique addresses, including contracts, and active tracked tokens
-- Current transfer-index rotation coverage and freshness
+- Active transfer-source scan bounds, gaps, and freshness
 - Independent chain, gas, transfer observation and index timestamps; explicit unknown, stale and future states
-- Current rotation progress separated from prior completed rotations; age labels update without refetching
+- RPC recent-range scope or legacy rotation progress; neither establishes complete window coverage; age labels update without refetching
 - Chain observed means the last accepted stats fetch; provider counters can still lag the chain
 - Manual Refresh preserves the selected window; visible tab returns re-fetch after at least one minute since the last request settled, with no polling
 - Screen receipt time is separate from source observation time; same-window refresh failures retain prior evidence with an explicit warning
@@ -77,9 +78,9 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 ### Activity Lens
 
-Activity Lens withholds comparative rankings until equivalent observation exposure is explicitly verified. The page-bounded collector does not establish complete window coverage, and a completed rotation or historical transfer presence is not enough. P0 also checks source health and fails closed for older snapshots without exposure evidence. Raw activity remains available as bounded observations; the stored-token count uses the same canonical population and selected window, not a completeness percentage.
+Activity Lens withholds comparative rankings until equivalent observation exposure is explicitly verified. Neither bounded RPC scans nor legacy page-bounded collection establishes complete window coverage, and a completed rotation or historical transfer presence is not enough. P0 also checks source health and fails closed for older snapshots without exposure evidence. Raw activity remains available as bounded observations; the stored-token count uses the same canonical population and selected window, not a completeness percentage.
 
-The ranking remains explicitly page-bounded and may be a lower bound for busy tokens. It is not exhaustive, is not comparable across different windows, and is never presented as a price forecast, trade signal, or investment recommendation.
+Stored activity remains a lower bound, not an exhaustive index or a cross-window comparison. Withheld rankings are never presented as a price forecast, trade signal, or investment recommendation.
 
 ## LP Leaders
 
@@ -130,23 +131,22 @@ See [Meme Leaders sources and limits](docs/meme-leaders.md).
 
 ## Collection design
 
-The 10-minute sync uses a bounded rotating collector:
+The 10-minute sync uses a bounded recent RPC collector:
 
-- 24 canonical tokens per run by default
-- Up to 6 recently active tokens added for more frequent observation
-- Up to 2 Blockscout pages per token
-- 50 transfers per page
-- 48-hour lookback cutoff
-- Concurrency limited to 4 workers
-- Deduplication by transaction hash + log index + token address
+- Canonical chain-4663 contracts with validated stored token decimals; unknown decimals are excluded explicitly
+- At most 48 recent blocks per pulse, ending 128 blocks behind the observed head (not guaranteed finality)
+- Eight-block chunks, reduced on validated log-count overflow; strict per-run request/time/event ceilings
+- Real block timestamp and hash checks; prior checkpoint mismatch stops collection for operator review
+- Chunk rows are persisted before checkpoints advance; transaction hash + log index + token address deduplication supports replay
+- Explicit post-bootstrap skipped-block counts; prior-outage coverage is unknown and gaps are not backfilled
 
-Rotation duration depends on the current registry size and successful collector runs; it is not a fixed completeness guarantee. Page limits mean transfer totals can be lower bounds for very active tokens. The UI reports current rotation progress separately from past completed rotations.
+This restores bounded observations, not a continuous or archival index. The legacy `transfers-blockscout` command retains rotating 24-token batches, up to 6 hot tokens and two pages per token only for explicit operator use.
 
 The public observation windows are `1h`, `6h`, and `24h`. Longer comparative windows remain disabled until sufficient equivalent history is available.
 
 P0 adds shared source request deadlines, local request budgets, bounded transient retries, and persisted collector cooldowns. These contain errors; they do not remove upstream blocking or establish production RPC capacity. See [P0 source reliability and rollout](docs/source-reliability-p0.md).
 
-Configurable limits:
+Legacy Blockscout transfer and metadata configurable limits (not RPC limits):
 
 ```bash
 TRANSFER_SYNC_BATCH_SIZE=24
@@ -165,7 +165,7 @@ Robinhood canonical registry
   → Blockscout chain stats
   → rotating token metadata
   → Robinhood reference prices
-  → real Blockscout token transfers
+  → bounded recent RPC token transfers
   → holder-delta metrics
   → Neon Postgres
   → optional Vercel Blob fallback snapshot
@@ -186,7 +186,7 @@ Next.js dashboard and API routes
                 ↑
  bounded local/scheduled indexer
        ↙                  ↘
-Robinhood APIs     Blockscout direct API
+Robinhood APIs     Blockscout stats/metadata + bounded RPC transfers
 ```
 
 - Next.js 16 / React 19 / Tailwind CSS / ECharts
@@ -243,7 +243,7 @@ DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 - Synthetic activity is excluded from the operating path.
 - Collection status, source, scope, and freshness are visible in the UI.
 - Partial source failures are recorded as degraded state; `/api/v1/source-health` reports the same overall status in its data and metadata, including LP freshness and the latest collection attempt.
-- Activity snapshot publication requires the transfer job to succeed; a stats failure can retain prior stats with their original timestamps. LP publication requires a verified, non-regressing observation; failures update attempt metadata, not the accepted observation.
+- Activity snapshot publication is attempted independently even after transfer or stats failure, retaining last-good source data and original timestamps; a successful upload does not clear the failed pulse status. LP publication requires a verified, non-regressing observation; failures update attempt metadata, not the accepted observation.
 - Activity is not labeled as demand, volume, profit, or investment opportunity.
 - A snapshot must contain the exact requested `1h`, `6h` or `24h` window. When an available snapshot lacks that entry, the four observation APIs return HTTP 503 with `data: null` and degraded metadata, rather than relabeling 24h data.
 - Window/filter changes cancel obsolete requests and reject stale completions, including A → B → A selection changes; old-condition data is hidden while new-condition data loads.
@@ -273,7 +273,7 @@ See [Web Analytics configuration, cost boundary and verification](docs/web-analy
 
 ## Known limitations
 
-- The transfer index is a rotating, page-bounded sample, not a full archival chain index.
+- Transfer data combines bounded recent RPC samples with historical page-bounded Blockscout observations, not a continuous or full archival chain index.
 - Current transfer rows do not decode DEX swaps, bridge routes, or protocol intent.
 - Token amounts do not imply USD value.
 - Holder observations are point-in-time API snapshots.
@@ -315,3 +315,11 @@ Production code is delivered through GitHub `Jeonyomi/robin` on `main` and its G
 - [Initial performance audit — historical baseline](docs/performance-review-20260908.md)
 - [Web Analytics and privacy](docs/web-analytics.md)
 - [Chain statistics collection repair](docs/chain-stats-recovery.md)
+
+## RPC transfer observation scope
+
+Transfers use a bounded recent sample of up to 48 RPC blocks per pulse on chain 4663. The 128-block safety depth is not a finality guarantee. Skipped ranges remain explicit gaps: no backfill or continuous indexing. A 48-hour lookback is not complete observation exposure; Activity Lens rankings remain withheld.
+
+RPC state is preferred after its first accepted success. Until then legacy last-good display remains, with active RPC failure exposed separately. `lastIndexedAt` is accepted scan time, not latest transfer-event time. History mixes Blockscout/RPC observations without per-row provenance. Blockscout chain statistics and gas freshness remain independent; RPC head never substitutes for total blocks. These changes do not establish production recovery.
+
+The RPC transfer request budget is local to this collector only: it is not shared with existing LP/serverless RPC calls and is not a provider-wide guarantee. A 48-block sample does not cover an entire 10-minute scheduling interval; the bootstrap gap across the prior outage is unknown. Incomplete token eligibility produces degraded status (operator-reported registry: 194 entries, 193 with validated decimals, one skipped). The default transfer CLI uses RPC; `transfers-blockscout` is an explicit operator rollback command only.

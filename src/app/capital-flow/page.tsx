@@ -40,7 +40,7 @@ export default function TransferActivityPage() {
         <div>
           <p className="eyebrow">RAW ONCHAIN OBSERVATIONS</p>
           <h1>Transfer Activity</h1>
-          <p>Canonical-token movements indexed from Blockscout. No inferred DEX direction or fabricated USD flow.</p>
+          <p>Canonical-token movements from bounded RPC scans and historical Blockscout observations. No inferred DEX direction or fabricated USD flow.</p>
         </div>
         <div className="window-tabs">
           {WINDOWS.map((item) => <button key={item} className={window === item ? "active" : ""} aria-pressed={window === item} onClick={() => setWindow(item)}>{item}</button>)}

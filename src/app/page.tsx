@@ -71,7 +71,7 @@ export default function DashboardPage() {
           <ObservationFreshness data={data} />
           <div className="status-line">
             <span className="status-key">METHOD</span>
-            <strong>Bounded rotating sample</strong>
+            <strong>{data?.coverage.collectionMode === "bounded-recent-rpc" ? "Bounded recent RPC sample" : "Bounded rotating sample"}</strong>
           </div>
         </div>
       </section>

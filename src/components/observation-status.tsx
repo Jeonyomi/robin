@@ -31,6 +31,13 @@ export function ObservationFreshness({ data }: { data: OverviewData | null }) {
 }
 
 export function CurrentRotation({ coverage }: { coverage: OverviewData["coverage"] | undefined }) {
+  if (coverage?.collectionMode === "bounded-recent-rpc") return <div>
+    <span className="scope-label">OBSERVATION COVERAGE</span>
+    <strong>Up to 48-block recent RPC sample/pulse</strong>
+    <p>Blocks {coverage.scanFromBlock ?? "?"}–{coverage.scannedToBlock ?? "?"}; {coverage.skippedBlocks ?? "Unknown"} skipped blocks. Gaps are not backfilled; this is not continuous indexing.</p>
+    <p>128-block safety depth is not a finality guarantee. Counts include mixed historical Blockscout/RPC observations; individual rows have no source attribution.</p>
+    <p>Last indexed is the accepted scan time, not the latest transfer event time. Continuous observation exposure is unverified.</p>
+  </div>;
   const progress = coverage?.cycleProgressPct;
   const known = progress != null && Number.isFinite(progress);
   const width = known ? Math.min(100, Math.max(0, progress)) : 0;

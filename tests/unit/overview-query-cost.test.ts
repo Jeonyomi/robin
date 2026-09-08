@@ -22,7 +22,7 @@ const leaderRows = [
   { token_address: "0xhigh", symbol: "HIGH", name: "High", current_transfers: "20", previous_transfers: "10", active_addresses: "8", holder_count: "100", holder_delta: "2", latest_block: "100", last_transfer_at: timestamp },
 ];
 
-function fakeDatabase() {
+function fakeDatabase(extraStates: unknown[][] = []) {
   const calls: { sql: string; params: unknown[]; arrayMode: boolean }[] = [];
   const query = vi.fn(async (sql: string, params: unknown[], options: { arrayMode: boolean }) => {
     calls.push({ sql, params, arrayMode: options.arrayMode });
@@ -30,8 +30,9 @@ function fakeDatabase() {
     if (sql.includes("WITH bucket_counts AS")) return { rows: [{ bucket: timestamp, transfers: "30", active_addresses: "12", mints: "1", burns: "2" }] };
     if (sql.includes("AS transfer_count")) return { rows: [{ transfer_count: "30", active_tokens: "2", active_addresses: "12", mint_events: "1", burn_events: "2", latest_block: "100", last_observed_at: timestamp }] };
     if (sql.includes('from "source_sync_state"')) return { rows: [
-      ["token-transfers", { scannedInCycle: 2, completedCycles: 1, lastBatchSize: 2, lookbackHours: 48 }, timestamp, "success"],
-      ["chain-stats", { totalBlocks: 100, totalTransactions: 200, totalAddresses: 50, observedAt: timestamp, gasPricesGwei: { slow: 1, average: 2, fast: 3 } }, timestamp, "success"],
+      ["token-transfers", { scannedInCycle: 2, completedCycles: 1, lastBatchSize: 2, lookbackHours: 48 }, timestamp, "success", "blockscout"],
+      ["chain-stats", { totalBlocks: 100, totalTransactions: 200, totalAddresses: 50, observedAt: timestamp, gasPricesGwei: { slow: 1, average: 2, fast: 3 } }, timestamp, "success", "blockscout"],
+      ...extraStates,
     ] };
     if (sql.includes("count(")) return { rows: [[2]] };
     if (sql.includes('from "token_transfers"')) return { rows: [["0xtx", 0, 100, "0xhigh", "HIGH", zero, "0xto", 3, timestamp]] };
@@ -49,6 +50,30 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overview ranking query cost", () => {
+  it("retains legacy last-good data but exposes failed active RPC collection", async () => {
+    const { db } = fakeDatabase([["token-transfers", {}, null, "error", "rpc"]]);
+    const data = await getOverviewData(db, "24h");
+    expect(data.coverage).toMatchObject({ source: "blockscout", activeSource: "rpc", status: "error", lastIndexedAt: timestamp });
+    expect(data.coverage.collectionMode).toBeUndefined();
+  });
+  it.each([["overview", overviewGET], ["capital-flow", capitalFlowGET], ["opportunities", opportunitiesGET]] as const)("%s reports mixed transfer provenance", async (endpoint, handler) => {
+    vi.mocked(getDb).mockReturnValue(fakeDatabase().db);
+    const body = await (await handler(new Request(`http://localhost/api/v1/${endpoint}`))).json();
+    expect(body.meta.sources).toContain("mixed-historical-blockscout-rpc-transfers");
+  });
+  it("prefers accepted RPC scans without relabeling event or chain freshness", async () => {
+    const scannedAt = "2026-01-01T11:59:00.000Z";
+    const { db, calls } = fakeDatabase([["token-transfers", { collectionMode: "bounded-recent-rpc", scanFromBlock: 1000, scannedToBlock: 1063, skippedBlocks: 500, scannedAt, latestTransferAt: timestamp }, scannedAt, "success", "rpc"]]);
+    const data = await getOverviewData(db, "24h");
+    expect(data.coverage).toMatchObject({ source: "rpc", collectionMode: "bounded-recent-rpc", scanFromBlock: 1000, scannedToBlock: 1063, skippedBlocks: 500, scannedAt, latestTransferAt: timestamp, lastIndexedAt: scannedAt, observationExposureVerified: false });
+    expect(data.chain?.totalBlocks).toBe(100);
+    expect(data.activity.lastObservedAt).toBe(timestamp);
+    expect(data.dataQuality.scope).toContain("recent RPC");
+    expect(data.dataQuality.note).toContain("not backfilled");
+    expect(data.dataQuality.note).not.toContain("Counts are page-bounded");
+    expect(calls.find(c => c.sql.includes('from "source_sync_state"'))?.params).toEqual(["blockscout", "rpc"]);
+  });
+
   it.each(["1h", "6h", "24h"])("%s observed-token count uses the collector canonical registry and selected window, never implies complete exposure", async (window) => {
     const { db, calls } = fakeDatabase();
     const data = await getOverviewData(db, window);

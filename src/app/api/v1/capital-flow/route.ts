@@ -22,8 +22,8 @@ export async function GET(request: Request) {
         meta: {
           window,
           lastUpdatedAt: database.data.lastUpdatedAt,
-          sources: ["blockscout-direct"],
-          methodology: "page-bounded-descriptive-observation",
+          sources: ["mixed-historical-blockscout-rpc-transfers", "blockscout-stats"],
+          methodology: "bounded-mixed-source-descriptive-observation",
           eventUnit: "erc20-transfer-log",
           servedFrom: "neon-postgres",
         },
@@ -39,8 +39,8 @@ export async function GET(request: Request) {
         meta: {
           window,
           lastUpdatedAt: snapshot?.builtAt ?? new Date().toISOString(),
-          sources: ["blockscout-direct"],
-          methodology: "page-bounded-descriptive-observation",
+          sources: ["mixed-historical-blockscout-rpc-transfers", "blockscout-stats"],
+          methodology: "bounded-mixed-source-descriptive-observation",
           eventUnit: "erc20-transfer-log",
           servedFrom: "snapshot",
           degraded: database.attempted,

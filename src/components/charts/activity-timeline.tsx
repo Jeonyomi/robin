@@ -24,7 +24,7 @@ export function ActivityTimelineChart({ data }: { data: ActivityTimelinePoint[] 
   if (!data?.length) {
     return (
       <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 text-center text-sm text-muted-foreground">
-        No transfer observations in this window yet. The rotating indexer will populate this view.
+        No stored transfer observations in this window. Collection is bounded and may contain gaps.
       </div>
     );
   }

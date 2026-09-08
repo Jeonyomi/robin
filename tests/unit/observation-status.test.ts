@@ -46,6 +46,15 @@ afterEach(async () => {
 });
 
 describe.each([{ name: "Overview", component: Overview }, { name: "Transfer Activity", component: Transfers }])("$name observation status", ({ component }) => {
+  it("labels RPC as a recent sample with gaps, never a completed rotation", async () => {
+    const data = observation();
+    await mount(component, { ...data, coverage: { ...data.coverage, source: "rpc", collectionMode: "bounded-recent-rpc", scanFromBlock: 1000, scannedToBlock: 1063, skippedBlocks: 500 } });
+    const banner = host.querySelector(".scope-banner")?.textContent;
+    expect(banner).toContain("48-block");
+    expect(banner).toContain("500");
+    expect(banner).toContain("mixed historical Blockscout/RPC");
+    expect(banner).not.toContain("prior completed rotations");
+  });
   it("labels observed token share separately from unverified scan completeness", async () => {
     const data = observation();
     await mount(component, { ...data, coverage: { ...data.coverage, observedTokensInWindow: 3, observationExposureVerified: false } });
