@@ -2,7 +2,7 @@
 
 Robinwatch collects free, publicly available Robinhood Chain data, stores the raw observations, and turns them into source-labeled descriptive analysis.
 
-**Web app:** https://robinwatch-mu.vercel.app/
+**Web app:** https://robinwatch24.vercel.app/
 
 > Independent public-source research project. Not affiliated with or endorsed by Robinhood Markets, Inc. The product does not provide investment advice, trade execution, or predictive signals.
 
