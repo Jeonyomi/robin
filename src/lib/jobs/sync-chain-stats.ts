@@ -1,9 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
-import { sourceSyncState, tokenTransfers } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { sourceSyncState } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { fetchChainStats } from "@/lib/sources/blockscout/stats";
 
-function previousBlockHeight(value: unknown): number | null {
+function previousBlockCount(value: unknown): number | null {
   if (!value || typeof value !== "object") return null;
   const candidate = Number((value as Record<string, unknown>).totalBlocks);
   return Number.isFinite(candidate) ? candidate : null;
@@ -37,10 +37,7 @@ export async function syncChainStats() {
   ]);
 
   try {
-    const [existingRows, transferRows] = await Promise.all([
-      db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(statsKey).limit(1),
-      db.select({ block: sql<number>`max(${tokenTransfers.blockNumber})` }).from(tokenTransfers),
-    ]);
+    const existingRows = await db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(statsKey).limit(1);
     const stats = await fetchChainStats();
     const gasValues = stats.gasPricesGwei
       ? [stats.gasPricesGwei.slow, stats.gasPricesGwei.average, stats.gasPricesGwei.fast]
@@ -68,11 +65,11 @@ export async function syncChainStats() {
       }).where(gasKey);
     }
 
-    const previousHeight = previousBlockHeight(existingRows[0]?.cursor);
-    const latestTransferBlock = Number(transferRows[0]?.block) || 0;
-    const minimumKnownHeight = Math.max(previousHeight ?? 0, latestTransferBlock);
-    if (stats.totalBlocks < minimumKnownHeight) {
-      const message = `Ignored regressing Blockscout stats response: ${stats.totalBlocks} < ${minimumKnownHeight}`;
+    // totalBlocks is a cached consensus-block count, not a head block number.
+    // Compare only with the last accepted response from this same stats source.
+    const previousCount = previousBlockCount(existingRows[0]?.cursor);
+    if (previousCount !== null && stats.totalBlocks < previousCount) {
+      const message = `Ignored regressing Blockscout stats response: ${stats.totalBlocks} < ${previousCount}`;
       await db.update(sourceSyncState).set({
         lastErrorAt: new Date(),
         lastError: message,

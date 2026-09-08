@@ -46,13 +46,14 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 ### Overview
 
-- Chain-wide total transactions, addresses, block height, and block time
+- Provider-reported total transactions, addresses, indexed block count, and average block time; block count is not chain-head height
 - Blockscout slow, standard, and fast suggested gas prices in Gwei per gas unit, with independent freshness, no additional API request, and an explicit total-fee caveat
 - Stored transfer events in the selected window
 - Unique addresses, including contracts, and active tracked tokens
 - Current transfer-index rotation coverage and freshness
 - Independent chain, gas, transfer observation and index timestamps; explicit unknown, stale and future states
 - Current rotation progress separated from prior completed rotations; age labels update without refetching
+- Chain observed means the last accepted stats fetch; provider counters can still lag the chain
 - Hourly transfer and address participation trend
 - Explicit withholding of cross-token rankings until observation exposure is comparable
 - Latest raw transfer observations
@@ -308,3 +309,4 @@ Production code is delivered through GitHub `Jeonyomi/robin` on `main` and its G
 - [Performance follow-up](docs/performance-followup-20260908.md)
 - [Initial performance audit — historical baseline](docs/performance-review-20260908.md)
 - [Web Analytics and privacy](docs/web-analytics.md)
+- [Chain statistics collection repair](docs/chain-stats-recovery.md)

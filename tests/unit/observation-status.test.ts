@@ -155,6 +155,16 @@ describe.each([
   });
 });
 
+it("distinguishes the provider block count and fetch age from chain head freshness", async () => {
+  await mount(Overview, observation());
+  const counters = host.querySelector(".chain-list")?.textContent;
+  expect(counters).toContain("Indexed block count");
+  expect(counters).not.toContain("Block height");
+  expect(counters).toContain("Latest tracked block");
+  expect(host.querySelector('[aria-label="Observation freshness"] .metric-note')?.textContent)
+    .toContain("Chain observed is the last accepted stats fetch, not the chain head time; provider counters may lag.");
+});
+
 it("keeps missing/invalid/future registry metadata dates distinct from holder observations", async () => {
   await mount(Registry, [null, "invalid", "2026-09-09T12:00:00Z"].map((lastSeenAt, index) => ({ address: `0x${index}`, symbol: `ASSET${index}`, canonicalStatus: "CANONICAL", lastSeenAt, metrics: { holderCount: 123 } })));
   const rows = [...host.querySelectorAll("tbody tr")];

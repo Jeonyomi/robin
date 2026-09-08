@@ -143,7 +143,7 @@ export default function DashboardPage() {
                 Blockscout suggested price per gas unit. See Observation freshness for gas age. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
               </p>
               <dl className="chain-list">
-                <div><dt>Block height</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
+                <div><dt>Indexed block count</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
                 <div><dt>Total addresses</dt><dd>{compact(data?.chain?.totalAddresses)}</dd></div>
                 <div><dt>Average block time</dt><dd>{data?.chain?.averageBlockTimeMs != null ? `${data.chain.averageBlockTimeMs.toFixed(0)} ms` : "Not observed"}</dd></div>
                 <div><dt>Latest tracked block</dt><dd>{data?.activity.latestBlock?.toLocaleString() ?? "Not observed"}</dd></div>
