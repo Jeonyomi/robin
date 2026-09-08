@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import {
   invalidWindowResponse,
+  missingSnapshotWindowResponse,
   parseObservationWindow,
   tryDatabase,
   uiOnlyResponse,
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
 
     const snap = await loadSnapshot();
     let rows = snap ? pickWindow(snap.stockTokens, window) : undefined;
+    if (snap && !rows) return missingSnapshotWindowResponse(window);
     if (rows) {
       if (canonicalOnly) rows = rows.filter((row) => row.canonicalStatus === "CANONICAL");
       return NextResponse.json({

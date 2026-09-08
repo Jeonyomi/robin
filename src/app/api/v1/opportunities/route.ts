@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import {
   invalidWindowResponse,
+  missingSnapshotWindowResponse,
   parseObservationWindow,
   tryDatabase,
   uiOnlyResponse,
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
 
     const snapshot = await loadSnapshot();
     const data = snapshot ? pickWindow(snapshot.overview, window) : undefined;
+    if (snapshot && !data) return missingSnapshotWindowResponse(window);
     if (data && "activity" in data && "coverage" in data) {
       return activityLensResponse(data, window, "snapshot", database.attempted);
     }

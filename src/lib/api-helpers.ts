@@ -39,6 +39,15 @@ export function uiOnlyResponse(endpoint: string) {
   });
 }
 
+/** A missing requested window must not silently borrow another window's data. */
+export function missingSnapshotWindowResponse(window: PublicObservationWindow) {
+  return NextResponse.json({
+    data: null,
+    error: "The published snapshot does not contain the requested observation window. No other window has been substituted.",
+    meta: { window, servedFrom: "snapshot", degraded: true },
+  }, { status: 503, headers: { "Cache-Control": "no-store, max-age=0" } });
+}
+
 /** True when the Neon Postgres database is configured. */
 export function dataAvailable(): boolean {
   return hasDatabase();

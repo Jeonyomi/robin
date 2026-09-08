@@ -1,0 +1,47 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { OverviewData } from "@/lib/queries";
+import { observationStatus } from "@/lib/observation-status";
+
+export function ObservationFreshness({ data }: { data: OverviewData | null }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((tick) => tick + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const sources = [
+    ["CHAIN OBSERVED", data?.chain?.observedAt],
+    ["GAS UPDATED", data?.gas?.updatedAt],
+    ["TRANSFER OBSERVED", data?.activity.lastObservedAt],
+    ["TRANSFER INDEXED", data?.coverage.lastIndexedAt],
+  ] as const;
+  return (
+    <div aria-label="Observation freshness">
+      {sources.map(([label, timestamp]) => {
+        const { status, label: age } = observationStatus(timestamp);
+        return <div className="status-line" key={label}>
+          <span className="status-key">{label}</span>
+          <strong title={timestamp ?? undefined} data-freshness={status}>{age}</strong>
+        </div>;
+      })}
+      <p className="metric-note">Fresh = timestamp within 3h. Each source is assessed separately; transfer recency does not establish chain freshness or complete coverage.</p>
+    </div>
+  );
+}
+
+export function CurrentRotation({ coverage }: { coverage: OverviewData["coverage"] | undefined }) {
+  const progress = coverage?.cycleProgressPct;
+  const known = progress != null && Number.isFinite(progress);
+  const width = known ? Math.min(100, Math.max(0, progress)) : 0;
+  return <>
+    <div>
+      <span className="scope-label">OBSERVATION COVERAGE</span>
+      <strong>{known ? `${progress}% of current rotation` : "Current rotation unknown"}</strong>
+      <p>{coverage?.completedCycles ?? "Unknown"} prior completed rotations · {coverage?.scannedInCycle ?? "?"} of {coverage?.trackedTokens ?? "?"} tokens in the current cycle.</p>
+    </div>
+    <div className="coverage-track" role="progressbar" aria-label="Current registry rotation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={known ? width : undefined} aria-valuetext={known ? `${progress}% of current rotation` : "Unknown"}>
+      <span style={{ width: `${width}%` }} />
+    </div>
+  </>;
+}

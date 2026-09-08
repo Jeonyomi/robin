@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useObservation } from "@/lib/hooks/use-observation";
 import type { ActivityTokenRow } from "@/lib/queries";
 
 const WINDOWS = ["1h", "6h", "24h"];
@@ -12,6 +13,11 @@ type LensMeta = {
   meaning?: string;
   lastUpdatedAt?: string;
 };
+
+function selectLens(payload: unknown) {
+  const result = payload as { data?: ActivityTokenRow[]; meta?: LensMeta };
+  return { tokens: Array.isArray(result.data) ? result.data : [], meta: result.meta ?? {} };
+}
 
 function compact(value: number | null | undefined) {
   if (value == null) return "—";
@@ -29,26 +35,11 @@ function momentum(value: number | null) {
 
 export default function ActivityLensPage() {
   const [window, setWindow] = useState("24h");
-  const [tokens, setTokens] = useState<ActivityTokenRow[]>([]);
-  const [meta, setMeta] = useState<LensMeta>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/v1/opportunities?window=${window}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Activity Lens request failed");
-        return response.json();
-      })
-      .then((payload) => {
-        setTokens(Array.isArray(payload.data) ? payload.data : []);
-        setMeta(payload.meta ?? {});
-      })
-      .catch(() => {
-        setTokens([]);
-        setMeta({ status: "withheld", release: { coveragePct: 0, reasons: ["Current activity data is unavailable"] } });
-      })
-      .finally(() => setLoading(false));
-  }, [window]);
+  const { data, loading, error } = useObservation(`/api/v1/opportunities?window=${window}`, selectLens);
+  const tokens = data?.tokens ?? [];
+  const meta: LensMeta = error
+    ? { status: "withheld", release: { coveragePct: 0, reasons: ["Current activity data is unavailable"] } }
+    : data?.meta ?? {};
 
   const active = meta.status === "active-limited";
 
@@ -66,12 +57,7 @@ export default function ActivityLensPage() {
               key={item}
               className={window === item ? "active" : ""}
               aria-pressed={window === item}
-              onClick={() => {
-                if (item !== window) {
-                  setLoading(true);
-                  setWindow(item);
-                }
-              }}
+              onClick={() => setWindow(item)}
             >{item}</button>
           ))}
         </div>

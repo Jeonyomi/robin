@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useObservation } from "@/lib/hooks/use-observation";
+import { observationStatus } from "@/lib/observation-status";
 
 type StockToken = {
   address: string;
@@ -9,32 +11,31 @@ type StockToken = {
   canonicalStatus: string;
   canonicalAsset: { multiplier: string | null; status: string } | null;
   metrics: { holderCount: number | null; holderDelta: number | null; dataCompleteness: number | null } | null;
-  lastSeenAt: string;
+  lastSeenAt: string | null;
 };
+
+const EMPTY_TOKENS: StockToken[] = [];
+function selectTokens(payload: unknown): StockToken[] {
+  const { data } = payload as { data?: StockToken[] };
+  return Array.isArray(data) ? data : [];
+}
 
 function shortAddress(value: string) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function relativeTime(value: string) {
-  const delta = Date.now() - new Date(value).getTime();
-  if (delta < 3_600_000) return `${Math.max(1, Math.floor(delta / 60_000))}m ago`;
-  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
-  return `${Math.floor(delta / 86_400_000)}d ago`;
+function relativeTime(value: string | null | undefined) {
+  const status = observationStatus(value);
+  if (status.status === "unknown" || status.status === "future") return status.label;
+  return new Date(value!).toISOString();
 }
 
 export default function AssetRegistryPage() {
-  const [tokens, setTokens] = useState<StockToken[]>([]);
-  const [loading, setLoading] = useState(true);
   const [canonicalOnly, setCanonicalOnly] = useState(true);
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    fetch(`/api/v1/stock-tokens?canonicalOnly=${canonicalOnly}`)
-      .then((response) => response.json())
-      .then((payload) => setTokens(payload.data || []))
-      .finally(() => setLoading(false));
-  }, [canonicalOnly]);
+  const { data, loading, error } = useObservation(`/api/v1/stock-tokens?canonicalOnly=${canonicalOnly}`, selectTokens);
+  const tokens = data ?? EMPTY_TOKENS;
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -60,7 +61,7 @@ export default function AssetRegistryPage() {
       </section>
 
       <section className="panel registry-panel">
-        <div className="panel-heading"><div><p className="section-kicker">SOURCE-MATCHED ASSETS</p><h2>{visible.length} results</h2></div><span className="method-chip">{loading ? "Refreshing" : "Robinhood + Blockscout"}</span></div>
+        <div className="panel-heading"><div><p className="section-kicker">SOURCE-MATCHED ASSETS</p><h2>{visible.length} results</h2></div><span className="method-chip">{loading ? "Refreshing" : error ? "Unavailable" : "Robinhood + Blockscout"}</span></div>
         <div className="transfer-table-wrap" role="region" aria-label="Asset registry results" tabIndex={0}>
           <table className="data-table">
             <thead><tr><th>Asset</th><th>Registry status</th><th>Holders</th><th>Holder change</th><th>Data coverage</th><th>Metadata observed</th><th>Contract</th></tr></thead>
@@ -78,7 +79,8 @@ export default function AssetRegistryPage() {
               ))}
             </tbody>
           </table>
-          {!loading && visible.length === 0 && <div className="empty-state">No assets match this filter.</div>}
+          {error && <div className="empty-state" role="alert">Current registry data is unavailable.</div>}
+          {!loading && !error && visible.length === 0 && <div className="empty-state">No assets match this filter.</div>}
         </div>
       </section>
 

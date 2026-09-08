@@ -5,7 +5,7 @@
  *  2. scripts/build-snapshot.ts (to bake the same payloads into data/snapshot.json)
  *     so deployments can serve the same shapes from Blob as a fallback.
  */
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   buildActivityEvidence,
@@ -501,21 +501,37 @@ export async function getStockTokensData(
     db.select().from(canonicalAssets),
     tokenQuery,
     db
-      .select()
+      .selectDistinctOn([tokenMetricSnapshots.tokenAddress], {
+        tokenAddress: tokenMetricSnapshots.tokenAddress,
+        holderCount: tokenMetricSnapshots.holderCount,
+        holderDelta: tokenMetricSnapshots.holderDelta,
+        uniqueBuyers: tokenMetricSnapshots.uniqueBuyers,
+        uniqueSellers: tokenMetricSnapshots.uniqueSellers,
+        netFlowUsd: tokenMetricSnapshots.netFlowUsd,
+        liquidityUsd: tokenMetricSnapshots.liquidityUsd,
+        depth1pctUsd: tokenMetricSnapshots.depth1pctUsd,
+        volumeUsd: tokenMetricSnapshots.volumeUsd,
+        top10Share: tokenMetricSnapshots.top10Share,
+        dataCompleteness: tokenMetricSnapshots.dataCompleteness,
+      })
       .from(tokenMetricSnapshots)
-      .where(eq(tokenMetricSnapshots.window, window))
-      .orderBy(desc(tokenMetricSnapshots.calculatedAt)),
+      .where(and(
+        eq(tokenMetricSnapshots.window, window),
+        canonicalOnly
+          ? inArray(tokenMetricSnapshots.tokenAddress,
+            db.select({ address: tokens.address }).from(tokens).where(eq(tokens.canonicalStatus, "CANONICAL")))
+          : undefined,
+      ))
+      // Latest snapshot wins; equal calculatedAt values prefer the highest id.
+      .orderBy(tokenMetricSnapshots.tokenAddress, desc(tokenMetricSnapshots.calculatedAt), desc(tokenMetricSnapshots.id)),
   ]);
 
   const canonicalByAddress = new Map(
     canonical.map((asset) => [asset.contractAddress.toLowerCase(), asset]),
   );
-  const latestMetricByToken = new Map<string, (typeof metricRows)[number]>();
-  for (const metric of metricRows) {
-    if (!latestMetricByToken.has(metric.tokenAddress)) {
-      latestMetricByToken.set(metric.tokenAddress, metric);
-    }
-  }
+  // SQL already returns one row per token. Keep tokenList order, including
+  // tokens without any matching snapshot (metrics: null).
+  const latestMetricByToken = new Map(metricRows.map((metric) => [metric.tokenAddress, metric]));
 
   return tokenList.map((token) => {
     const latestMetric = latestMetricByToken.get(token.address) ?? null;

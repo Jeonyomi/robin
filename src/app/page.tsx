@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useObservation } from "@/lib/hooks/use-observation";
+import { CurrentRotation, ObservationFreshness } from "@/components/observation-status";
+import { observationStatus } from "@/lib/observation-status";
 import Link from "next/link";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
 
 const WINDOWS = ["1h", "6h", "24h"];
+
+function selectOverview(payload: unknown): OverviewData {
+  const { data } = payload as { data?: OverviewData };
+  if (!data?.activity || !data?.coverage) throw new Error("No current observation is available");
+  return data;
+}
 
 function compact(value: number | null | undefined) {
   if (value == null) return "Not observed";
@@ -18,12 +27,9 @@ function gasPrice(value: number | null | undefined) {
 }
 
 function relativeTime(value: string | null | undefined) {
-  if (!value) return "Not indexed";
-  const delta = Date.now() - new Date(value).getTime();
-  if (delta < 60_000) return "less than a minute ago";
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
-  return new Date(value).toLocaleString();
+  const status = observationStatus(value);
+  if (status.status === "unknown" || status.status === "future") return status.label;
+  return new Date(value!).toISOString();
 }
 
 function address(value: string) {
@@ -42,24 +48,7 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 
 export default function DashboardPage() {
   const [window, setWindow] = useState("24h");
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/v1/overview?window=${window}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Overview request failed");
-        return response.json();
-      })
-      .then((payload) => {
-        if (!payload.data?.activity || !payload.data?.coverage) throw new Error("No current observation is available");
-        setData(payload.data);
-        setError(false);
-      })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [window]);
+  const { data, loading, error } = useObservation(`/api/v1/overview?window=${window}`, selectOverview);
 
   return (
     <div className="page-shell">
@@ -74,13 +63,10 @@ export default function DashboardPage() {
         <div className="hero-status">
           <div className="status-line">
             <span className={`status-dot ${data?.coverage.status === "success" ? "status-dot-live" : "status-dot-warn"}`} />
-            <span>Blockscout direct API</span>
+            <span>Transfer index result</span>
             <strong>{data?.coverage.status ?? "checking"}</strong>
           </div>
-          <div className="status-line">
-            <span className="status-key">LAST INDEX</span>
-            <strong>{relativeTime(data?.coverage.lastIndexedAt)}</strong>
-          </div>
+          <ObservationFreshness data={data} />
           <div className="status-line">
             <span className="status-key">METHOD</span>
             <strong>Bounded rotating sample</strong>
@@ -111,19 +97,12 @@ export default function DashboardPage() {
             <Metric
               label="SUGGESTED GAS"
               value={data?.gas?.averageGwei != null ? `${gasPrice(data.gas.averageGwei)} Gwei` : "Not observed"}
-              note={`Standard · per gas unit · ${relativeTime(data?.gas?.updatedAt)}`}
+              note="Standard · per gas unit · See Observation freshness for gas age."
             />
           </section>
 
           <section className="scope-banner">
-            <div>
-              <span className="scope-label">OBSERVATION COVERAGE</span>
-              <strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Registry rotation completed" : `${data?.coverage.cycleProgressPct ?? 0}% of initial rotation`}</strong>
-              <p>{data?.coverage.completedCycles ?? 0} full cycles · {data?.coverage.scannedInCycle ?? 0} of {data?.coverage.trackedTokens ?? 0} tokens in the current cycle.</p>
-            </div>
-            <div className="coverage-track" aria-label={`${data?.coverage.cycleProgressPct ?? 0}% coverage`}>
-              <span style={{ width: `${(data?.coverage.completedCycles ?? 0) > 0 ? 100 : data?.coverage.cycleProgressPct ?? 0}%` }} />
-            </div>
+            <CurrentRotation coverage={data?.coverage} />
             <p className="scope-note">{data?.dataQuality.note ?? "Waiting for the first transfer-index cycle."}</p>
           </section>
 
@@ -161,7 +140,7 @@ export default function DashboardPage() {
                 ))}
               </div>
               <p className="gas-note">
-                Blockscout suggested price per gas unit · updated {relativeTime(data?.gas?.updatedAt)}. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
+                Blockscout suggested price per gas unit. See Observation freshness for gas age. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
               </p>
               <dl className="chain-list">
                 <div><dt>Block height</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>

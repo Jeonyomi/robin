@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import {
   invalidWindowResponse,
+  missingSnapshotWindowResponse,
   parseObservationWindow,
   tryDatabase,
   uiOnlyResponse,
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
 
     const snap = await loadSnapshot();
     const data = snap ? pickWindow(snap.overview, window) : undefined;
+    if (snap && !data) return missingSnapshotWindowResponse(window);
     if (data && "activity" in data && "coverage" in data) {
       return NextResponse.json({
         data: { ...data, topTokens: [] },

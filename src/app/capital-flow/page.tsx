@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useObservation } from "@/lib/hooks/use-observation";
+import { CurrentRotation, ObservationFreshness } from "@/components/observation-status";
+import { observationStatus } from "@/lib/observation-status";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
 
 const WINDOWS = ["1h", "6h", "24h"];
+
+function selectOverview(payload: unknown): OverviewData {
+  const { data } = payload as { data?: OverviewData };
+  if (!data?.activity || !data?.coverage) throw new Error("No current observation is available");
+  return data;
+}
 
 function compact(value: number | null | undefined) {
   if (value == null) return "Not observed";
@@ -16,29 +25,14 @@ function shortAddress(value: string) {
 }
 
 function relativeTime(value: string | null | undefined) {
-  if (!value) return "Not indexed";
-  const delta = Date.now() - new Date(value).getTime();
-  if (delta < 60_000) return "<1m ago";
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
-  return new Date(value).toLocaleString();
+  const status = observationStatus(value);
+  if (status.status === "unknown" || status.status === "future") return status.label;
+  return new Date(value!).toISOString();
 }
 
 export default function TransferActivityPage() {
   const [window, setWindow] = useState("24h");
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/v1/capital-flow?window=${window}`)
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!payload.data?.activity || !payload.data?.coverage) throw new Error("No current observation is available");
-        setData(payload.data);
-      })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [window]);
+  const { data, loading, error } = useObservation(`/api/v1/capital-flow?window=${window}`, selectOverview);
 
   return (
     <div className="page-shell">
@@ -53,6 +47,8 @@ export default function TransferActivityPage() {
         </div>
       </header>
 
+      {error && <div className="empty-state" role="alert">The latest observation could not be loaded. Check Data Sources for source health.</div>}
+
       <section className="metric-grid metric-grid-five">
         <div className="metric-block"><p className="metric-label">TRANSFER EVENTS</p><p className="metric-value">{compact(data?.activity.transferEvents)}</p><p className="metric-note">Stored ERC-20 logs / {window}</p></div>
         <div className="metric-block"><p className="metric-label">ADDRESSES</p><p className="metric-value">{compact(data?.activity.activeAddresses)}</p><p className="metric-note">Unique addresses, including contracts</p></div>
@@ -62,13 +58,14 @@ export default function TransferActivityPage() {
       </section>
 
       <section className="scope-banner compact-scope">
-        <div><span className="scope-label">SCOPE</span><strong>{(data?.coverage.completedCycles ?? 0) > 0 ? "Registry rotation completed" : `${data?.coverage.cycleProgressPct ?? 0}% initial rotation`}</strong></div>
-        <div className="coverage-track"><span style={{ width: `${(data?.coverage.completedCycles ?? 0) > 0 ? 100 : data?.coverage.cycleProgressPct ?? 0}%` }} /></div>
-        <p className="scope-note">Last indexed {relativeTime(data?.coverage.lastIndexedAt)}. {data?.dataQuality.note}</p>
+        <CurrentRotation coverage={data?.coverage} />
+        <p className="scope-note">{data?.dataQuality.note}</p>
       </section>
 
+      <section className="panel"><ObservationFreshness data={data} /></section>
+
       <section className="panel">
-        <div className="panel-heading"><div><p className="section-kicker">HOURLY VIEW</p><h2>Transfer events and unique addresses</h2></div><span className="method-chip">{loading ? "Loading" : "Observed"}</span></div>
+        <div className="panel-heading"><div><p className="section-kicker">HOURLY VIEW</p><h2>Transfer events and unique addresses</h2></div><span className="method-chip">{loading ? "Loading" : error ? "Unavailable" : "Observed"}</span></div>
         <ActivityTimelineChart data={data?.timeline ?? []} />
       </section>
 

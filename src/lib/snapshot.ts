@@ -118,8 +118,8 @@ async function readSnapshot(): Promise<Snapshot | null> {
   return cached;
 }
 
-/** Best-effort window lookup with a fallback to the 24h view. */
+/** Exact window only: never relabel a 24h fallback as a shorter observation. */
 export function pickWindow<T>(map: Record<string, T> | undefined, window: string): T | undefined {
   if (!map) return undefined;
-  return map[window] ?? map["24h"];
+  return map[window];
 }
