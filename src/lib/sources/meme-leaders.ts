@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchSourceJson, isSourceBlocked, SourceRequestError } from "./source-request";
 import type { MemeLeader, MemeLeadersData } from "@/lib/meme-leaders";
 
 const ROOT = "https://api.geckoterminal.com/api/v2";
@@ -36,14 +37,8 @@ function image(value: unknown): string | null {
   } catch { return null; }
 }
 function date(value: unknown): string | null { return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null; }
-class ProviderRateLimit extends Error {}
 async function read(url: string, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { cache: "no-store", redirect: "error", signal, headers: { Accept: "application/json" } });
-  if (response.status === 429) throw new ProviderRateLimit("Provider rate limit.");
-  if (!response.ok) throw new Error("Public market source unavailable.");
-  const raw = await response.text();
-  if (raw.length > 4_000_000) throw new Error("Provider response exceeds bounds.");
-  return JSON.parse(raw);
+  return fetchSourceJson(url === REGISTRY ? "robinhood" : "geckoterminal", url, { signal, scope: url === REGISTRY ? "assets" : "meme-leaders" });
 }
 
 async function collect(): Promise<MemeLeadersData> {
@@ -51,7 +46,7 @@ async function collect(): Promise<MemeLeadersData> {
   const registryRetrievedAt = new Date().toISOString();
   const registry = registrySchema.parse(await read(REGISTRY, signal));
   const stock = new Set(registry.assets.flatMap(a => (a.deployments ?? []).filter(d => d.chainId === 4663).map(d => d.contractAddress)));
-  if (!stock.size) throw new Error("Canonical exclusion registry unavailable.");
+  if (!stock.size) throw new SourceRequestError("schema");
   const data = feed.parse(await read(`${ROOT}/networks/${NETWORK}/trending_pools?include=base_token,quote_token,dex&page=1`, signal));
   const included = new Map(data.included.map(i => [i.id, i]));
   const unique = new Map<string, MemeLeader>();
@@ -89,15 +84,13 @@ async function collect(): Promise<MemeLeadersData> {
   const enrich = tokens.slice(0, 12);
   let metadataFailed = 0;
   let metadataRequested = 0;
-  let rateLimited = false;
-  for (let offset = 0; offset < enrich.length; offset += 3) {
-    if (rateLimited || signal.aborted) break;
-    metadataRequested += enrich.slice(offset, offset + 3).length;
-    await Promise.all(enrich.slice(offset, offset + 3).map(async row => {
+  for (const row of enrich) {
+    if (signal.aborted) break;
+    metadataRequested++;
       try {
         const result = z.object({ data: item }).parse(await read(`${ROOT}/networks/${NETWORK}/tokens/${row.address}/info`, signal));
         const attrs = result.data.attributes;
-        if (result.data.type !== "token" || result.data.id !== `robinhood_${row.address}` || address.parse(attrs.address) !== row.address) throw new Error("Metadata identity mismatch.");
+        if (result.data.type !== "token" || result.data.id !== `robinhood_${row.address}` || address.parse(attrs.address) !== row.address) throw new SourceRequestError("schema");
         const names = Array.isArray(attrs.categories) ? attrs.categories.filter((s): s is string => typeof s === "string" && s.length <= 80).slice(0, 20) : [];
         const ids = Array.isArray(attrs.gt_category_ids) ? attrs.gt_category_ids.filter((s): s is string => typeof s === "string" && s.length <= 80) : [];
         row.categories = names;
@@ -109,9 +102,10 @@ async function collect(): Promise<MemeLeadersData> {
         row.holders = count(holders.count); row.holdersUpdatedAt = date(holders.last_updated);
       } catch (error) {
         row.metadataStatus = "unavailable"; metadataFailed++;
-        if (error instanceof ProviderRateLimit) rateLimited = true;
+        if (error instanceof z.ZodError) throw new SourceRequestError("schema");
+        if (error instanceof SourceRequestError && error.code === "schema") throw error;
+        if (isSourceBlocked(error)) break;
       }
-    }));
   }
   return {
     tokens, retrievedAt: new Date().toISOString(), registryRetrievedAt,
@@ -128,9 +122,9 @@ let retryAt = 0;
 export async function fetchMemeLeaders(): Promise<MemeLeadersData> {
   if (cached && Date.now() - Date.parse(cached.retrievedAt) < 180_000) return cached;
   if (pending) return pending;
-  if (Date.now() < retryAt) throw new Error("Provider cooldown.");
+  if (Date.now() < retryAt) throw new SourceRequestError("cooldown", null, retryAt - Date.now());
   pending = collect().then(data => { cached = data; return data; }).catch((error: unknown) => {
-    cached = null; retryAt = Date.now() + 30_000; throw error;
+    cached = null; retryAt = Date.now() + 30_000; throw error instanceof z.ZodError ? new SourceRequestError("schema") : error;
   }).finally(() => { pending = null; });
   return pending;
 }

@@ -49,6 +49,24 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overview ranking query cost", () => {
+  it.each(["1h", "6h", "24h"])("%s observed-token count uses the collector canonical registry and selected window, never implies complete exposure", async (window) => {
+    const { db, calls } = fakeDatabase();
+    const data = await getOverviewData(db, window);
+    const denominator = calls.find((call) => call.arrayMode && call.sql.includes("count(") && !call.sql.includes("DISTINCT"));
+    const numerator = calls.find((call) => call.arrayMode && call.sql.includes("DISTINCT"));
+    expect(denominator?.sql).toContain('from "canonical_assets"');
+    expect(numerator?.sql).toContain('inner join "canonical_assets"');
+    expect(numerator?.sql).toContain('"token_transfers"."token_address" = "canonical_assets"."contract_address"');
+    expect(numerator?.sql).toContain('"token_transfers"."timestamp" >=');
+    expect(numerator?.sql).toContain('"token_transfers"."timestamp" <=');
+    const hours = Number(window.slice(0, -1));
+    expect(numerator?.params).toEqual([new Date(Date.parse(timestamp) - hours * 3_600_000).toISOString(), timestamp]);
+    expect(data.coverage).toMatchObject({ observedTokensInWindow: 2, tokensWithStoredTransfers: 2, observationExposureVerified: false });
+    expect(data.dataQuality.completeness).toBe("partial");
+    expect(data.dataQuality.note).toContain("not scan completeness");
+    expect(data.activity.transferEvents).toBe(30);
+  });
+
   it.each(["1h", "6h", "24h"])("%s opt-out removes only ranking SQL and preserves nonranking output", async (window) => {
     const defaultDb = fakeDatabase();
     const explicitDb = fakeDatabase();
@@ -97,15 +115,17 @@ describe("overview ranking query cost", () => {
     expect(routeDb.calls).toEqual(baselineDb.calls.filter((call) => !call.sql.includes("WITH counts AS")));
   });
 
-  it("opportunities keeps the default rankings", async () => {
+  it("opportunities withholds page-bounded rankings while raw overview activity remains available", async () => {
     const baseline = await getOverviewData(fakeDatabase().db, "24h");
     const routeDb = fakeDatabase();
     vi.mocked(getDb).mockReturnValue(routeDb.db);
     const response = await opportunitiesGET(new Request("http://localhost/api/v1/opportunities?window=24h"));
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.meta.status).toBe("active-limited");
-    expect(body.data).toEqual(baseline.topTokens);
+    expect(baseline.activity.transferEvents).toBe(30);
+    expect(body.meta.status).toBe("withheld");
+    expect(body.data).toEqual([]);
+    expect(body.meta.release.reasons).toContain("Comparable observation exposure is unverified for this window");
     expect(routeDb.calls).toHaveLength(7);
     console.log(`opportunities: ${routeDb.calls.length} SQL, ${body.data.length} ranked tokens`);
   });

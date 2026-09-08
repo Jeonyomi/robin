@@ -1,113 +1,91 @@
 import { z } from "zod";
 import { getAPIs } from "@/lib/config";
+import { fetchSourceJson } from "@/lib/sources/source-request";
 
-// ── Raw Price Schema (verified against live /rhj/prices response) ───────────
-// Batch endpoint returns { quotes: [...] } — all assets in ONE request.
-
+const decimal = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const priceString = z.string().regex(decimal).refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0);
+const deploymentSchema = z.object({
+  contractAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  chainId: z.number().int().positive(),
+});
 const rawQuoteSchema = z.object({
-  tokenSymbol: z.string(),
-  deployments: z
-    .array(z.object({ contractAddress: z.string(), chainId: z.number() }))
-    .optional(),
-  bid: z.string().optional(),
-  ask: z.string().optional(),
-  currency: z.string().optional(),
+  tokenSymbol: z.string().min(1),
+  deployments: z.array(deploymentSchema).min(1),
+  bid: priceString.optional(),
+  ask: priceString.optional(),
+  currency: z.literal("USD").optional(),
   dailyTradingVolume: z.string().optional(),
   isTradingHalt: z.boolean().optional(),
-  generatedAt: z.string().optional(),
-});
+  generatedAt: z.string().nullable().optional(),
+}).refine((quote) => quote.bid !== undefined || quote.ask !== undefined)
+  .refine((quote) => quote.bid === undefined || quote.ask === undefined || Number(quote.bid) <= Number(quote.ask));
 
 export type RawRobinhoodQuote = z.infer<typeof rawQuoteSchema>;
-
-// ── Normalized Domain Model ─────────────────────────────────────────────────
-
 export type NormalizedPrice = {
   symbol: string;
+  deployments: Array<{ contractAddress: string; chainId: number }>;
   rawBid: number | null;
   rawAsk: number | null;
   rawMid: number | null;
   currentMultiplier: string | null;
   adjustedReferencePrice: number | null;
   tradingHalt: boolean;
-  referenceTimestamp: Date;
+  referenceTimestamp: Date | null;
 };
+// Preserve the existing array API while exposing rejected rows to the sync job.
+export type ReferencePriceBatch = NormalizedPrice[] & { rejectedCount: number };
 
-// ── Multiplier Normalization (pure — testable) ───────────────────────────────
-// Raw underlier mid must be divided by currentMultiplier to get the
-// onchain-adjusted reference price. Never divide by zero or null.
-
-export function adjustReferencePrice(
-  rawMid: number | null,
-  currentMultiplier: string | null,
-): number | null {
-  if (rawMid === null || currentMultiplier === null) return null;
-  const multiplier = parseFloat(currentMultiplier);
-  if (!Number.isFinite(multiplier) || multiplier === 0) return null;
-  return rawMid / multiplier;
+export function adjustReferencePrice(rawMid: number | null, currentMultiplier: string | null): number | null {
+  if (rawMid === null || !Number.isFinite(rawMid) || rawMid < 0 || currentMultiplier === null || !decimal.test(currentMultiplier)) return null;
+  const multiplier = Number(currentMultiplier);
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return null;
+  const adjusted = rawMid / multiplier;
+  return Number.isFinite(adjusted) ? adjusted : null;
 }
 
-// ── Adapter — batch fetch of ALL reference quotes ───────────────────────────
-// Uses the batch endpoint (1 request) instead of per-symbol (rate-limited).
-
-export async function fetchAllReferencePrices(): Promise<NormalizedPrice[]> {
-  const url = `${getAPIs().robinhood.baseUrl}/rhj/prices`;
-
-  const response = await fetchWithRetry(url, 3);
-  if (!response.ok) {
-    throw new Error(`Robinhood prices API failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const quotes = data.quotes || [];
-  const result: NormalizedPrice[] = [];
-
-  for (const raw of quotes) {
+export async function fetchAllReferencePrices(): Promise<ReferencePriceBatch> {
+  const data = await fetchSourceJson("robinhood", `${getAPIs().robinhood.baseUrl}/rhj/prices`, {
+    headers: { Accept: "application/json" }, scope: "prices",
+  });
+  const envelope = z.object({ quotes: z.array(z.unknown()).min(1) }).safeParse(data);
+  if (!envelope.success) throw new Error("Invalid or empty Robinhood quotes envelope");
+  const result: ReferencePriceBatch = Object.assign([], { rejectedCount: 0 });
+  for (const raw of envelope.data.quotes) {
     const parsed = rawQuoteSchema.safeParse(raw);
-    if (!parsed.success) continue;
-
+    if (!parsed.success) { result.rejectedCount++; continue; }
     const quote = parsed.data;
-    const rawBid = quote.bid ? parseFloat(quote.bid) : null;
-    const rawAsk = quote.ask ? parseFloat(quote.ask) : null;
-    const rawMid = rawBid !== null && rawAsk !== null ? (rawBid + rawAsk) / 2 : rawBid ?? rawAsk;
-
+    const rawBid = quote.bid === undefined ? null : Number(quote.bid);
+    const rawAsk = quote.ask === undefined ? null : Number(quote.ask);
+    // Split before adding to avoid overflowing two otherwise finite inputs.
+    const rawMid = rawBid !== null && rawAsk !== null ? rawBid / 2 + rawAsk / 2 : rawBid ?? rawAsk;
+    const providerTime = z.iso.datetime({ offset: true }).safeParse(quote.generatedAt);
+    const time = providerTime.success ? new Date(providerTime.data) : null;
     result.push({
       symbol: quote.tokenSymbol.toUpperCase(),
-      rawBid,
-      rawAsk,
-      rawMid,
-      currentMultiplier: null, // multiplier comes from canonical assets table
-      adjustedReferencePrice: rawMid,
-      tradingHalt: quote.isTradingHalt || false,
-      referenceTimestamp: quote.generatedAt ? new Date(quote.generatedAt) : new Date(),
+      deployments: quote.deployments.map((deployment) => ({ ...deployment, contractAddress: deployment.contractAddress.toLowerCase() })),
+      rawBid, rawAsk, rawMid,
+      currentMultiplier: null,
+      adjustedReferencePrice: null, // Unknown until joined to verified canonical identity.
+      tradingHalt: quote.isTradingHalt ?? false,
+      referenceTimestamp: time && Number.isFinite(time.getTime()) && time.getTime() <= Date.now() ? time : null,
     });
   }
-
+  if (result.length === 0) throw new Error(`Robinhood quotes contain no usable rows (${result.rejectedCount} rejected)`);
   return result;
 }
 
-// ── Retry helper (429 / 5xx → exponential backoff) ──────────────────────────
-
-async function fetchWithRetry(url: string, retries: number): Promise<Response> {
-  let delay = 1000;
-  for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, { headers: { "Accept": "application/json" } });
-    if (response.ok || attempt >= retries) return response;
-
-    // Respect Retry-After when present
-    const retryAfter = response.headers.get("retry-after");
-    const wait = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
-    await new Promise((r) => setTimeout(r, wait));
-    delay *= 2;
-  }
-}
-
-// Kept for single-symbol use cases (rate-limited; prefer batch)
+// Legacy symbol-only callers fail closed. Supply chain+contract proof to opt in.
 export async function fetchReferencePrice(
   symbol: string,
   currentMultiplier: string | null,
+  identity?: { chainId: number; contractAddress: string },
 ): Promise<NormalizedPrice | null> {
+  if (!identity || !/^0x[0-9a-fA-F]{40}$/.test(identity.contractAddress)) return null;
   const all = await fetchAllReferencePrices();
-  const match = all.find((p) => p.symbol === symbol.toUpperCase());
-  if (!match) return null;
+  const matches = all.filter((price) => price.symbol === symbol.toUpperCase() && price.deployments.some(
+    (deployment) => deployment.chainId === identity.chainId && deployment.contractAddress === identity.contractAddress.toLowerCase(),
+  ));
+  if (matches.length !== 1) return null;
+  const match = matches[0];
   return { ...match, currentMultiplier, adjustedReferencePrice: adjustReferencePrice(match.rawMid, currentMultiplier) };
 }

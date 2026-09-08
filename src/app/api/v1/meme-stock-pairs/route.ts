@@ -1,3 +1,4 @@
+import { publicRpcGate, PublicRpcBusyError } from "@/lib/sources/public-rpc-gate";
 import { discoverStockPairs } from "@/lib/sources/meme-stock-discovery";
 import { inspectStockPool, inspectStockPositions } from "@/lib/sources/meme-stock-onchain";
 import type { PoolInspection, PairPositions } from "@/lib/meme-stock-types";
@@ -44,9 +45,9 @@ export async function GET(request: Request) {
   if (active || now < nextReadAt || starts.length >= 6) return fail("Public onchain inspector is cooling down. Wait before the next read.", 429, true);
   active = true; starts.push(now);
   try {
-    const data = sample !== null || tokenId !== null
-      ? await inspectStockPositions(pair, tokenId ?? undefined)
-      : await inspectStockPool(pair);
+    const data = await publicRpcGate.run<PoolInspection | PairPositions>(`meme:${key}`, () => sample !== null || tokenId !== null
+      ? inspectStockPositions(pair, tokenId ?? undefined)
+      : inspectStockPool(pair), { cost: 96, cacheMs: 0 });
     const age = Date.now() - Date.parse(data.observedAt);
     if (!Number.isFinite(age) || age > 120_000 || age < -30_000 || data.poolId.toLowerCase() !== pair.id) {
       return fail("Onchain observation failed identity or freshness checks. Snapshot withheld.", 503, true);
@@ -54,7 +55,8 @@ export async function GET(request: Request) {
     if (cache.size >= 64) cache.delete(cache.keys().next().value!);
     cache.set(key, { until: Date.now() + 45_000, data });
     return Response.json({ data, error: null }, { headers });
-  } catch {
+  } catch (error) {
+    if (error instanceof PublicRpcBusyError) return fail(error.message, 429, true);
     nextReadAt = Date.now() + 30_000;
     return fail("Pool or NFT data could not be verified. The NFT may belong to another pool, or the public RPC may be unavailable. No fees or performance have been inferred.", 503, true);
   } finally {

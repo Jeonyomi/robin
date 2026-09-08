@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getAPIs } from "@/lib/config";
+import { fetchSourceJson, SourceRequestError } from "../source-request";
 
 // ── Raw Blockscout Schemas (verified against live robinhoodchain.blockscout.com) ──
 // Direct instance works with a browser User-Agent; api.blockscout.com/4663 requires a key.
@@ -7,22 +8,25 @@ import { getAPIs } from "@/lib/config";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
+const integerString = z.string().regex(/^\d+$/).max(1000);
+const countString = integerString.refine(s => Number.isSafeInteger(Number(s)));
+const decimalString = z.string().regex(/^\d+(?:\.\d+)?$/).max(1000).refine(s => Number.isFinite(Number(s)));
 const tokenSchema = z.object({
-  address_hash: z.string(),
+  address_hash: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   symbol: z.string().nullable().optional(),
   name: z.string().nullable().optional(),
-  decimals: z.string().nullable().optional(),
+  decimals: countString.refine(s => Number(s) <= 255).nullable().optional(),
   type: z.string().nullable().optional(),
-  total_supply: z.string().nullable().optional(),
-  holders_count: z.string().nullable().optional(),
-  exchange_rate: z.string().nullable().optional(),
-  circulating_market_cap: z.string().nullable().optional(),
-  volume_24h: z.string().nullable().optional(),
+  total_supply: integerString.nullable().optional(),
+  holders_count: countString.nullable().optional(),
+  exchange_rate: decimalString.nullable().optional(),
+  circulating_market_cap: decimalString.nullable().optional(),
+  volume_24h: decimalString.nullable().optional(),
 });
 
 const tokenCountersSchema = z.object({
-  token_holders_count: z.string().nullable().optional(),
-  transfers_count: z.string().nullable().optional(),
+  token_holders_count: countString.nullable().optional(),
+  transfers_count: countString.nullable().optional(),
 });
 
 // ── Normalized Domain Model ─────────────────────────────────────────────────
@@ -57,68 +61,33 @@ function baseHeaders(): Record<string, string> {
 }
 
 export async function fetchTokenMetadata(address: string): Promise<BlockscoutToken | null> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new SourceRequestError("schema");
   const base = getAPIs().blockscout.baseUrl;
   const url = `${base}/tokens/${address.toLowerCase()}`;
-
-  try {
-    const response = await fetch(url, { headers: baseHeaders() });
-
-    if (!response.ok) {
-      if (response.status === 404) return null;
-      throw new Error(`Blockscout token API failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const parsed = tokenSchema.safeParse(data);
-
-    if (!parsed.success) {
-      console.error(`Invalid token data for ${address}:`, parsed.error);
-      return null;
-    }
-
-    const token = parsed.data;
-
-    // Fetch counters separately (holders + transfers)
-    let holdersCount = token.holders_count ? parseInt(token.holders_count) : null;
-    let transfersCount: number | null = null;
-
-    try {
-      const countersResponse = await fetch(`${base}/tokens/${address.toLowerCase()}/counters`, {
-        headers: baseHeaders(),
-      });
-      if (countersResponse.ok) {
-        const countersParsed = tokenCountersSchema.safeParse(await countersResponse.json());
-        if (countersParsed.success) {
-          if (countersParsed.data.token_holders_count) {
-            holdersCount = parseInt(countersParsed.data.token_holders_count);
-          }
-          if (countersParsed.data.transfers_count) {
-            transfersCount = parseInt(countersParsed.data.transfers_count);
-          }
-        }
-      }
-    } catch {
-      // Continue without counters
-    }
-
-    return {
-      address: token.address_hash.toLowerCase(),
-      symbol: token.symbol || null,
-      name: token.name || null,
-      decimals: token.decimals ? parseInt(token.decimals) : null,
-      tokenType: token.type || null,
-      totalSupply: token.total_supply || null,
-      holdersCount,
-      exchangeRate: token.exchange_rate || null,
-      marketCap: token.circulating_market_cap || null,
-      volume24h: token.volume_24h || null,
-      isVerified: null, // smart-contract endpoint (P1)
-      isProxy: null,
-      implementationAddress: null,
-      transfersCount,
-    };
-  } catch (error) {
-    console.error(`Failed to fetch token ${address} from Blockscout:`, error);
-    return null;
-  }
+  const options = { headers: baseHeaders(), scope: "metadata", allow404: true };
+  const data = await fetchSourceJson("blockscout", url, options);
+  if (data === null) return null;
+  const parsed = tokenSchema.safeParse(data);
+  if (!parsed.success || parsed.data.address_hash.toLowerCase() !== address.toLowerCase()) throw new SourceRequestError("schema");
+  const token = parsed.data;
+  const counters = await fetchSourceJson("blockscout", `${url}/counters`, options);
+  const countersParsed = tokenCountersSchema.safeParse(counters === null ? {} : counters);
+  if (!countersParsed.success) throw new SourceRequestError("schema");
+  const count = (value: string | null | undefined) => value == null ? null : Number(value);
+  return {
+    address: token.address_hash.toLowerCase(),
+    symbol: token.symbol || null,
+    name: token.name || null,
+    decimals: count(token.decimals),
+    tokenType: token.type || null,
+    totalSupply: token.total_supply ?? null,
+    holdersCount: count(countersParsed.data.token_holders_count) ?? count(token.holders_count),
+    exchangeRate: token.exchange_rate ?? null,
+    marketCap: token.circulating_market_cap ?? null,
+    volume24h: token.volume_24h ?? null,
+    isVerified: null,
+    isProxy: null,
+    implementationAddress: null,
+    transfersCount: count(countersParsed.data.transfers_count),
+  };
 }

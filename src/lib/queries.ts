@@ -5,7 +5,7 @@
  *  2. scripts/build-snapshot.ts (to bake the same payloads into data/snapshot.json)
  *     so deployments can serve the same shapes from Blob as a fallback.
  */
-import { eq, and, desc, gte, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lte, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   buildActivityEvidence,
@@ -114,7 +114,11 @@ export interface OverviewData {
   };
   coverage: {
     trackedTokens: number;
+    /** Compatibility alias for observedTokensInWindow; never scan coverage. */
     tokensWithStoredTransfers: number;
+    observedTokensInWindow?: number;
+    /** Missing on legacy snapshots; absence must fail closed. */
+    observationExposureVerified?: boolean;
     scannedInCycle: number;
     completedCycles: number;
     cycleProgressPct: number;
@@ -337,8 +341,10 @@ export async function getOverviewData(
       .orderBy(desc(tokenTransfers.timestamp), desc(tokenTransfers.blockNumber))
       .limit(12),
     Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(tokens).where(eq(tokens.canonicalStatus, "CANONICAL")),
-      db.select({ count: sql<number>`count(DISTINCT token_address)::int` }).from(tokenTransfers),
+      db.select({ count: sql<number>`count(*)::int` }).from(canonicalAssets),
+      db.select({ count: sql<number>`count(DISTINCT ${tokenTransfers.tokenAddress})::int` }).from(tokenTransfers)
+        .innerJoin(canonicalAssets, eq(tokenTransfers.tokenAddress, canonicalAssets.contractAddress))
+        .where(and(gte(tokenTransfers.timestamp, windowStart), lte(tokenTransfers.timestamp, now))),
     ]),
     db.select({
       jobName: sourceSyncState.jobName,
@@ -425,6 +431,10 @@ export async function getOverviewData(
     coverage: {
       trackedTokens,
       tokensWithStoredTransfers,
+      observedTokensInWindow: tokensWithStoredTransfers,
+      // Page-bounded historical events/old rotation cursors contain no proof of
+      // continuous scanning exposure for this canonical set and window.
+      observationExposureVerified: false,
       scannedInCycle,
       completedCycles,
       cycleProgressPct,
@@ -449,9 +459,9 @@ export async function getOverviewData(
     })),
     dataQuality: {
       scope: "Bounded rotating sample of canonical Robinhood Chain token transfers",
-      completeness: completedCycles > 0 ? "cycle-complete" : "partial",
+      completeness: "partial",
       syntheticExcluded: true,
-      note: "Counts and rankings are page-bounded observations for tracked canonical tokens and may be lower bounds. They are descriptive, not exhaustive or predictive.",
+      note: "Counts are page-bounded observations and may be lower bounds. Observed-token counts use the current canonical registry and selected window; they are not scan completeness. Continuous observation exposure is unverified, so comparative Activity Lens rankings are withheld.",
     },
     lastUpdatedAt,
   };

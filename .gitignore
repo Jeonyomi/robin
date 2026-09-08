@@ -49,5 +49,4 @@ next-env.d.ts
 /data/
 .env
 
-# Machine-specific scheduled-sync wrapper
-/scripts/sync-hourly.cmd
+# The portable scheduled pulse wrapper is version-controlled.

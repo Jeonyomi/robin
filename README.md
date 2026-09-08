@@ -77,7 +77,7 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 
 ### Activity Lens
 
-Activity Lens publishes a limited descriptive ranking after an operational gate confirms a completed registry rotation, an index updated within two hours, at least 95% stored-transfer coverage, and observations in the selected window. The index combines 60% relative observed transfer events with 40% relative observed unique addresses; window-over-window change is shown separately.
+Activity Lens withholds comparative rankings until equivalent observation exposure is explicitly verified. The page-bounded collector does not establish complete window coverage, and a completed rotation or historical transfer presence is not enough. P0 also checks source health and fails closed for older snapshots without exposure evidence. Raw activity remains available as bounded observations; the stored-token count uses the same canonical population and selected window, not a completeness percentage.
 
 The ranking remains explicitly page-bounded and may be a lower bound for busy tokens. It is not exhaustive, is not comparable across different windows, and is never presented as a price forecast, trade signal, or investment recommendation.
 
@@ -98,7 +98,7 @@ The independent LP collector publishes verified observations to a dedicated Neon
 
 The public RPC is rate-limited and not recommended by its operator for production-scale use. Collector reads are paced, bounded, deduplicated and fail closed; only bytecode-verified Multicall view calls are grouped. Rate-limit cooldowns persist between collection runs. Missing or expired observations are not replaced with invented rows. Freshness depends on the separate collector host remaining available, not on Vercel alone. Legacy browser-local scenarios remain untouched and are never uploaded or treated as chain data.
 
-See [LP Leaders methodology and source limits](docs/lp-workspace.md). The older read-only `/api/v1/lp-position` endpoint remains available for compatibility but is no longer the page's user flow.
+See [LP Leaders methodology and source limits](docs/lp-workspace.md). The older read-only `/api/v1/lp-position` endpoint remains available for compatibility but is no longer the page's user flow. It now has short fresh-result caching, identical-request coalescing and process-local admission/cooldown shared with Meme/Stock inspection; these are not cross-instance provider quotas.
 
 ## Meme / Stock Pairs
 
@@ -144,6 +144,8 @@ Rotation duration depends on the current registry size and successful collector 
 
 The public observation windows are `1h`, `6h`, and `24h`. Longer comparative windows remain disabled until sufficient equivalent history is available.
 
+P0 adds shared source request deadlines, local request budgets, bounded transient retries, and persisted collector cooldowns. These contain errors; they do not remove upstream blocking or establish production RPC capacity. See [P0 source reliability and rollout](docs/source-reliability-p0.md).
+
 Configurable limits:
 
 ```bash
@@ -154,7 +156,7 @@ TRANSFER_SYNC_LOOKBACK_HOURS=48
 METADATA_SYNC_BATCH_SIZE=50
 ```
 
-The 10-minute Windows scheduler runs an activity-first pulse: bounded token transfers, chain/gas stats, then a v3 snapshot publish. A stats refresh failure does not discard a successful transfer refresh; the snapshot retains the last stored stats. Full canonical, metadata, price, and metrics maintenance remains available through `pnpm sync` and should be scheduled separately from the latency-sensitive activity pulse.
+The 10-minute Windows scheduler runs independent attempts for bounded token transfers, chain/gas stats, then v3 snapshot publication. Transfer failure no longer prevents stats or publication; source failures retain last-good observations and original timestamps. Any failed stage leaves the pulse exit nonzero, even after successful publication. Full canonical, metadata, price, and metrics maintenance remains available through `pnpm sync` and should be scheduled separately from the latency-sensitive activity pulse.
 
 ## Sync pipeline
 

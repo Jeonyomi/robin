@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getAPIs } from "@/lib/config";
+import { fetchSourceJson, SourceRequestError } from "../source-request";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -48,14 +49,9 @@ export async function fetchChainStats(): Promise<BlockscoutChainStats> {
   const key = getAPIs().blockscout.apiKey;
   if (key) headers.Authorization = `Bearer ${key}`;
 
-  const response = await fetch(`${base}/stats`, { headers, signal: AbortSignal.timeout(20_000) });
-  if (!response.ok) throw new Error(`Blockscout stats API failed: ${response.status}`);
-
-  const parsed = statsSchema.safeParse(await response.json());
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    throw new Error(`Invalid Blockscout stats response at ${issue?.path.join(".") || "response"}: ${issue?.message ?? "unknown schema error"}`);
-  }
+  const response = await fetchSourceJson("blockscout", `${base}/stats`, { headers, scope: "stats", timeoutMs: 20_000 });
+  const parsed = statsSchema.safeParse(response);
+  if (!parsed.success) throw new SourceRequestError("schema");
 
   const value = parsed.data;
   return {

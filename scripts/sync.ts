@@ -10,6 +10,7 @@
  *   pnpm sync prices     # Robinhood reference prices
  *   pnpm sync transfers  # bounded real token-transfer ingestion
  *   pnpm sync metrics    # compute holder deltas from source observations
+ *   pnpm sync snapshot   # publish the current persisted snapshot to Blob
  *   pnpm sync watch      # run all jobs on an interval (5 min)
  */
 import "dotenv/config";
@@ -23,6 +24,8 @@ import { generateEconomicActions } from "@/lib/jobs/generate-economic-actions";
 import { generateSignals } from "@/lib/jobs/generate-signals";
 import { publishSnapshotToBlob, formatBytes } from "./lib/snapshot-builder";
 
+// CLI collectors share durable local source budgets/cooldowns across invocations.
+process.env.ROBINWATCH_COLLECTOR = "1";
 const job = process.argv[2] || "all";
 const allowSyntheticActions = process.env.ALLOW_SYNTHETIC_ACTIONS === "true";
 
@@ -61,8 +64,31 @@ async function run(jobName: string): Promise<boolean> {
       case "signals":
         result = await generateSignals();
         break;
+      case "snapshot": {
+        const published = await publishSnapshotToBlob();
+        console.log(`✓ snapshot published (${formatBytes(published.sizeBytes)})`);
+        result = published;
+        break;
+      }
       default:
         throw new Error(`Unknown job: ${jobName}`);
+    }
+    // Jobs can persist useful partial data and resolve with degraded outcomes.
+    // Mark the CLI failure without undoing those writes or aborting later stages.
+    if (result && typeof result === "object") {
+      const outcome = result as Record<string, unknown>;
+      const positive = (key: string) => typeof outcome[key] === "number" && outcome[key] > 0;
+      const degraded =
+        (jobName === "transfers" && (positive("tokensFailed") || positive("tokensSkipped") || outcome.tokensSucceeded === 0)) ||
+        (jobName === "metadata" && (positive("errors") || outcome.enriched === 0)) ||
+        (jobName === "prices" && (positive("errors") || outcome.stored === 0)) ||
+        (jobName === "canonical" && outcome.processed === 0) ||
+        (jobName === "stats" && outcome.ignored === true);
+      if (degraded) {
+        console.error(`✗ ${jobName} completed with degraded source results:`, JSON.stringify(result).slice(0, 500));
+        process.exitCode = 1;
+        return false;
+      }
     }
     console.log(`✓ ${jobName} done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     if (result) console.log("  ", JSON.stringify(result).slice(0, 500));
@@ -89,29 +115,17 @@ async function main() {
       console.log("ℹ synthetic economic actions skipped (fail-closed default)");
     }
     console.log("ℹ heuristic signals skipped in the default sync; the dashboard uses observed activity only");
-    let allSucceeded = true;
     for (const j of jobs) {
-      if (!(await run(j))) allSucceeded = false;
+      await run(j);
     }
 
     // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
     // Only in "all" mode (scheduled) — watch mode re-runs every 5 min and would
     // burn Blob upload bandwidth. Skipped when BLOB_READ_WRITE_TOKEN is unset.
-    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN && allSucceeded) {
-      console.log("\n▶ publishing snapshot to Vercel Blob");
-      try {
-        const { url, sizeBytes } = await publishSnapshotToBlob();
-        console.log(`✓ snapshot published (${formatBytes(sizeBytes)})`);
-        console.log(`  ${url}`);
-      } catch (error) {
-        console.error(
-          "✗ snapshot publish failed:",
-          error instanceof Error ? error.message : error
-        );
-        process.exitCode = 1;
-      }
-    } else if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN && !allSucceeded) {
-      console.error("✗ snapshot publish skipped because one or more sync jobs failed");
+    // Partial data and persisted source failures must still reach the dashboard.
+    // A successful publication never clears an earlier nonzero exit code.
+    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN) {
+      await run("snapshot");
     }
 
     if (job === "watch") {

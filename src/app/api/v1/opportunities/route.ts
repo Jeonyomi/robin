@@ -22,6 +22,7 @@ function activityLensResponse(
     trackedTokens: data.coverage.trackedTokens,
     tokensWithStoredTransfers: data.coverage.tokensWithStoredTransfers,
     syncStatus: data.coverage.status,
+    observationExposureVerified: data.coverage.observationExposureVerified,
     lastIndexedAt: data.coverage.lastIndexedAt,
     rankedTokens: data.topTokens.length,
   });
@@ -35,7 +36,7 @@ function activityLensResponse(
       lastUpdatedAt: data.lastUpdatedAt,
       sources: ["blockscout-direct", "robinhood-assets"],
       methodology: "60% relative observed transfer events + 40% relative observed unique addresses",
-      observationBoundary: "Page-bounded rotating sample; values may be lower bounds and are not exhaustive.",
+      observationBoundary: "Page-bounded rotating sample; observed-token share is not scan completeness. Comparative rankings require verified comparable exposure for the selected window and successful, recent indexing.",
       meaning: "Descriptive onchain activity only; not a price forecast, trade signal, or investment recommendation.",
       investmentRecommendation: false,
       servedFrom,

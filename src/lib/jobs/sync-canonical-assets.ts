@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { canonicalAssets, tokens, sourceSyncState } from "@/db/schema";
 import { fetchCanonicalAssets, detectTickerCollisions } from "@/lib/sources/robinhood/assets";
 import { eq, and } from "drizzle-orm";
+import { SourceRequestError } from "@/lib/sources/source-request";
 
 export async function syncCanonicalAssets(): Promise<{
   processed: number;
@@ -11,6 +12,7 @@ export async function syncCanonicalAssets(): Promise<{
 }> {
   const db = getDb();
   const startTime = new Date();
+  let applied = 0;
 
   // Record sync start
   await db
@@ -29,6 +31,7 @@ export async function syncCanonicalAssets(): Promise<{
   try {
     // Fetch from Robinhood API
     const assets = await fetchCanonicalAssets();
+    if (assets.length === 0) throw new Error("Canonical registry has no usable assets");
 
     let created = 0;
     let updated = 0;
@@ -41,6 +44,9 @@ export async function syncCanonicalAssets(): Promise<{
         .where(eq(canonicalAssets.contractAddress, asset.contractAddress))
         .limit(1);
 
+      if (existing.length > 0 && existing[0].chainId !== asset.chainId) {
+        throw new Error("Canonical registry chain identity conflict");
+      }
       if (existing.length === 0) {
         // Insert new canonical asset
         await db.insert(canonicalAssets).values({
@@ -59,6 +65,7 @@ export async function syncCanonicalAssets(): Promise<{
           syncedAt: new Date(),
         });
 
+        applied++;
         // Also ensure token exists with canonical status
         await db
           .insert(tokens)
@@ -94,6 +101,7 @@ export async function syncCanonicalAssets(): Promise<{
             syncedAt: new Date(),
           })
           .where(eq(canonicalAssets.contractAddress, asset.contractAddress));
+        applied++;
         updated++;
       }
     }
@@ -132,17 +140,20 @@ export async function syncCanonicalAssets(): Promise<{
 
     return { processed: assets.length, created, updated, collisions };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = error instanceof SourceRequestError
+      ? `Canonical registry request failed (${error.code}; HTTP ${error.status ?? "unknown"})`
+      : "Canonical registry sync failed (invalid registry or persistence error)";
 
     await db
       .update(sourceSyncState)
       .set({
         lastErrorAt: new Date(),
-        lastError: errorMessage,
-        status: "error",
+        lastError: `${errorMessage}; ${applied} registry rows applied before failure`,
+        status: applied > 0 ? "degraded" : "error",
+        recordsProcessed: applied,
       })
       .where(and(eq(sourceSyncState.source, "robinhood"), eq(sourceSyncState.jobName, "canonical-assets")));
 
-    throw error;
+    throw new Error(errorMessage);
   }
 }

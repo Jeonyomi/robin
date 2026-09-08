@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchSourceJson, isSourceBlocked, SourceRequestError } from "./source-request";
 import type { PairDiscovery, PairToken, StockPair } from "@/lib/meme-stock-types";
 
 const REGISTRY = "https://api.robinhood.com/rhj/assets";
@@ -32,11 +33,7 @@ let pending: Promise<PairDiscovery> | null = null;
 let retryAfter = 0;
 
 async function json(url: string, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store", redirect: "error", signal });
-  if (!response.ok) throw new Error("Discovery provider unavailable.");
-  const text = await response.text();
-  if (text.length > 4_000_000) throw new Error("Discovery response exceeded bounds.");
-  return JSON.parse(text);
+  return fetchSourceJson(url === REGISTRY ? "robinhood" : "dexscreener", url, { signal, scope: url === REGISTRY ? "assets" : "stock-discovery" });
 }
 
 async function collect(): Promise<PairDiscovery> {
@@ -51,7 +48,7 @@ async function collect(): Promise<PairDiscovery> {
       });
     }
   }
-  if (!canonical.size) throw new Error("Canonical registry unavailable.");
+  if (!canonical.size) throw new SourceRequestError("schema");
   const targets = STOCKS.map((s) => [...canonical.values()].find((a) => a.symbol === s));
   const failedStocks = STOCKS.filter((_, i) => !targets[i]);
   const jobs = [
@@ -60,15 +57,20 @@ async function collect(): Promise<PairDiscovery> {
   ];
   const pairs = new Map<string, StockPair>();
   let successful = 0;
-  // Three concurrent requests maximum; fixed basket, no user-driven upstream search.
-  for (let start = 0; start < jobs.length; start += 3) {
-    const batch = await Promise.all(jobs.slice(start, start + 3).map(async (job) => {
+  // Sequential admission lets a provider block stop all remaining fixed-basket jobs.
+  let blocked: unknown = null;
+  for (let start = 0; start < jobs.length; start++) {
+    const batch = await Promise.all(jobs.slice(start, start + 1).map(async (job) => {
       try {
         const body = await json(job.url, signal);
         const items = job.search ? z.object({ pairs: z.array(z.unknown()).max(100) }).parse(body).pairs
           : z.array(z.unknown()).max(100).parse(body);
         return { job, items, retrievedAt: new Date().toISOString() };
-      } catch { return { job, items: null, retrievedAt: new Date().toISOString() }; }
+      } catch (error) {
+        if (error instanceof z.ZodError) throw new SourceRequestError("schema");
+        if (isSourceBlocked(error)) blocked = error;
+        return { job, items: null, retrievedAt: new Date().toISOString() };
+      }
     }));
     for (const result of batch) {
       if (!result.items) { failedStocks.push(result.job.label); continue; }
@@ -99,8 +101,9 @@ async function collect(): Promise<PairDiscovery> {
         });
       }
     }
+    if (blocked || signal.aborted) { failedStocks.push(...jobs.slice(start + 1).map(job => job.label)); break; }
   }
-  if (!successful) throw new Error("Pair discovery is unavailable.");
+  if (!successful) throw blocked ?? new SourceRequestError("network");
   return {
     pairs: [...pairs.values()].sort((a, b) => (b.liquidityUsd ?? -1) - (a.liquidityUsd ?? -1) || a.id.localeCompare(b.id)).slice(0, 60),
     retrievedAt: new Date().toISOString(), registryRetrievedAt, stockSymbols: STOCKS,
@@ -114,9 +117,9 @@ export async function discoverStockPairs(): Promise<PairDiscovery> {
   const now = Date.now();
   if (cached && now - Date.parse(cached.retrievedAt) < 180_000) return cached;
   if (pending) return pending;
-  if (now < retryAfter) throw new Error("Discovery cooling down after a provider failure.");
+  if (now < retryAfter) throw new SourceRequestError("cooldown", null, retryAfter - now);
   pending = collect().then((data) => { cached = data; return data; }).catch((error: unknown) => {
-    cached = null; retryAfter = Date.now() + 30_000; throw error;
+    cached = null; retryAfter = Date.now() + 30_000; throw error instanceof z.ZodError ? new SourceRequestError("schema") : error;
   }).finally(() => { pending = null; });
   return pending;
 }

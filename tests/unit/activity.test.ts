@@ -48,6 +48,7 @@ describe("onchain activity domain", () => {
       trackedTokens: 194,
       tokensWithStoredTransfers: 192,
       syncStatus: "success",
+      observationExposureVerified: true,
       lastIndexedAt: "2026-09-05T01:04:40.112Z",
       rankedTokens: 12,
     }, now);
@@ -63,5 +64,22 @@ describe("onchain activity domain", () => {
     }, now);
     expect(stale.active).toBe(false);
     expect(stale.reasons).toContain("Transfer index is stale or has an invalid timestamp");
+  });
+});
+
+describe("Activity Lens exposure gate", () => {
+  const now = Date.parse("2026-09-08T12:00:00Z");
+  const ready = { completedCycles: 9, trackedTokens: 10, tokensWithStoredTransfers: 10, syncStatus: "success", lastIndexedAt: "2026-09-08T11:55:00Z", rankedTokens: 3, observationExposureVerified: true };
+
+  it.each([undefined, null, false])("fails closed for missing/unverified exposure (%s), including old snapshots", (observationExposureVerified) => {
+    const result = evaluateActivityLensRelease({ ...ready, observationExposureVerified }, now);
+    expect(result.active).toBe(false);
+    expect(result.reasons).toContain("Comparable observation exposure is unverified for this window");
+  });
+
+  it.each(["error", "degraded", "running", "not-started", "unknown", ""])("withholds even recent full-coverage data when sync status is %s", (syncStatus) => {
+    const result = evaluateActivityLensRelease({ ...ready, syncStatus }, now);
+    expect(result.active).toBe(false);
+    expect(result.reasons).toContain("Transfer sync is not successful");
   });
 });

@@ -7,6 +7,8 @@ export type ActivityLensReleaseInput = {
   trackedTokens: number;
   tokensWithStoredTransfers: number;
   syncStatus: string;
+  /** Only true when comparable token/window scanning exposure has evidence. */
+  observationExposureVerified?: boolean | null;
   lastIndexedAt: string | null;
   rankedTokens: number;
 };
@@ -37,8 +39,10 @@ export function evaluateActivityLensRelease(
   const indexAgeMs = nowMs - indexedAtMs;
   const reasons: string[] = [];
 
+  if (input.observationExposureVerified !== true) reasons.push("Comparable observation exposure is unverified for this window");
+  if (input.syncStatus !== "success") reasons.push("Transfer sync is not successful");
   if (input.completedCycles < 1) reasons.push("Initial registry rotation is incomplete");
-  if (coverage < MIN_STORED_TRANSFER_COVERAGE) reasons.push("Stored transfer coverage is below 95%");
+  if (coverage < MIN_STORED_TRANSFER_COVERAGE) reasons.push("Observed-token share in this window is below 95% (not scan completeness)");
   if (!Number.isFinite(indexedAtMs) || indexAgeMs > MAX_INDEX_AGE_MS || indexAgeMs < -5 * 60 * 1000) {
     reasons.push("Transfer index is stale or has an invalid timestamp");
   }

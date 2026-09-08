@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchChainStats } from "@/lib/sources/blockscout/stats";
+import { fetchSourceJson, SourceRequestError } from "@/lib/sources/source-request";
+vi.mock("@/lib/sources/source-request", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/sources/source-request")>(), fetchSourceJson: vi.fn() }));
 
 vi.mock("@/lib/config", () => ({
   getAPIs: () => ({ blockscout: { baseUrl: "https://blockscout.invalid/api/v2", apiKey: "test-secret" } }),
@@ -23,9 +25,7 @@ const objectSample = {
 };
 
 function respond(payload: unknown) {
-  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+  return vi.mocked(fetchSourceJson).mockReset().mockResolvedValue(payload);
 }
 
 afterEach(() => {
@@ -50,7 +50,6 @@ describe("fetchChainStats", () => {
   });
 
   it("accepts legacy numeric prices from sample-1 and preserves request options", async () => {
-    const timeout = vi.spyOn(AbortSignal, "timeout");
     const fetchMock = respond({
       ...objectSample,
       total_blocks: "57665570", total_transactions: "650093986", total_addresses: "20182407",
@@ -60,10 +59,9 @@ describe("fetchChainStats", () => {
       totalBlocks: 57665570, totalTransactions: 650093986, totalAddresses: 20182407,
       gasPricesGwei: { slow: 0.22, average: 0.25, fast: 1.21 },
     });
-    expect(timeout).toHaveBeenCalledWith(20_000);
-    expect(fetchMock).toHaveBeenCalledWith("https://blockscout.invalid/api/v2/stats", {
+    expect(fetchMock).toHaveBeenCalledWith("blockscout", "https://blockscout.invalid/api/v2/stats", {
       headers: { Accept: "application/json", Authorization: "Bearer test-secret", "User-Agent": expect.stringContaining("Mozilla/5.0") },
-      signal: expect.any(AbortSignal),
+      scope: "stats", timeoutMs: 20_000,
     });
   });
 
@@ -91,10 +89,10 @@ describe("fetchChainStats", () => {
     });
   });
 
-  it.each(["slow", "average", "fast"])("rejects negative numeric and object %s prices with field paths", async (tier) => {
+  it.each(["slow", "average", "fast"])("rejects negative numeric and object %s prices with sanitized schema errors", async (tier) => {
     for (const price of [-1, { price: -1 }]) {
       respond({ ...objectSample, gas_prices: { ...objectSample.gas_prices, [tier]: price } });
-      await expect(fetchChainStats()).rejects.toThrow(`gas_prices.${tier}`);
+      await expect(fetchChainStats()).rejects.toMatchObject({ code: "schema" });
     }
   });
 
@@ -109,31 +107,29 @@ describe("fetchChainStats", () => {
     respond({ ...objectSample, gas_prices: { slow }, secret: "payload-secret" });
     const error = await fetchChainStats().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain("gas_prices.slow");
+    expect(error).toMatchObject({ code: "schema" });
     expect((error as Error).message).not.toMatch(/payload-secret|test-secret|214274905/);
   });
 
   it.each(["bad", 1, []])("rejects a malformed gas_prices container (%s)", async (gas_prices) => {
     respond({ ...objectSample, gas_prices });
-    await expect(fetchChainStats()).rejects.toThrow("gas_prices");
+    await expect(fetchChainStats()).rejects.toMatchObject({ code: "schema" });
   });
 
   it.each(["total_blocks", "total_transactions", "total_addresses"])("rejects invalid required count %s", async (field) => {
     for (const value of ["", " ", "abc", "1.5", "1e3", "-1", "Infinity", "9007199254740992", "9".repeat(400), null, undefined, 123]) {
       respond({ ...objectSample, [field]: value });
-      await expect(fetchChainStats()).rejects.toThrow(field);
+      await expect(fetchChainStats()).rejects.toMatchObject({ code: "schema" });
     }
   });
 
   it.each([429, 500])("reports HTTP %s without reading or leaking the body", async (status) => {
-    const json = vi.fn();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status, json }));
-    await expect(fetchChainStats()).rejects.toThrow(`Blockscout stats API failed: ${status}`);
-    expect(json).not.toHaveBeenCalled();
+    vi.mocked(fetchSourceJson).mockReset().mockRejectedValue(new SourceRequestError("http", status));
+    await expect(fetchChainStats()).rejects.toMatchObject({ code: "http", status });
   });
 
   it("propagates network failures", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
-    await expect(fetchChainStats()).rejects.toThrow("network unavailable");
+    vi.mocked(fetchSourceJson).mockReset().mockRejectedValue(new SourceRequestError("network"));
+    await expect(fetchChainStats()).rejects.toMatchObject({ code: "network" });
   });
 });

@@ -14,7 +14,7 @@ export type CanonicalAsset = {
   status: string | null;
   tradingCapabilities: unknown;
   isin: string | null;
-  sourceUpdatedAt: Date;
+  sourceUpdatedAt: Date | null;
 };
 
 export type CanonicalStatus = "CANONICAL" | "NON_CANONICAL" | "TICKER_COLLISION" | "UNKNOWN";

@@ -38,7 +38,9 @@ export function CurrentRotation({ coverage }: { coverage: OverviewData["coverage
     <div>
       <span className="scope-label">OBSERVATION COVERAGE</span>
       <strong>{known ? `${progress}% of current rotation` : "Current rotation unknown"}</strong>
-      <p>{coverage?.completedCycles ?? "Unknown"} prior completed rotations · {coverage?.scannedInCycle ?? "?"} of {coverage?.trackedTokens ?? "?"} tokens in the current cycle.</p>
+      <p>{coverage?.completedCycles ?? "Unknown"} prior completed rotations · {coverage?.scannedInCycle ?? "?"} of {coverage?.trackedTokens ?? "?"} tokens in the current cycle; rotation progress is not scan completeness.</p>
+      <p>{coverage?.observedTokensInWindow ?? "Unknown"} of {coverage?.trackedTokens ?? "Unknown"} canonical tokens with observed transfers in this window.</p>
+      {coverage?.observationExposureVerified !== true && <p>Continuous observation exposure is unverified.</p>}
     </div>
     <div className="coverage-track" role="progressbar" aria-label="Current registry rotation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={known ? width : undefined} aria-valuetext={known ? `${progress}% of current rotation` : "Unknown"}>
       <span style={{ width: `${width}%` }} />

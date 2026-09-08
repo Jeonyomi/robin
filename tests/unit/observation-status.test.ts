@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Overview from "../../src/app/page";
 import Transfers from "../../src/app/capital-flow/page";
 import Registry from "../../src/app/stock-tokens/page";
+import ActivityLens from "../../src/app/opportunities/page";
 
 vi.mock("@/components/charts/activity-timeline", () => ({ ActivityTimelineChart: () => null }));
 vi.stubGlobal("React", React);
@@ -45,6 +46,21 @@ afterEach(async () => {
 });
 
 describe.each([{ name: "Overview", component: Overview }, { name: "Transfer Activity", component: Transfers }])("$name observation status", ({ component }) => {
+  it("labels observed token share separately from unverified scan completeness", async () => {
+    const data = observation();
+    await mount(component, { ...data, coverage: { ...data.coverage, observedTokensInWindow: 3, observationExposureVerified: false } });
+    const banner = host.querySelector(".scope-banner")?.textContent;
+    expect(banner).toContain("3 of 10 canonical tokens with observed transfers in this window");
+    expect(banner).toContain("rotation progress is not scan completeness");
+    expect(banner).toContain("Continuous observation exposure is unverified");
+  });
+
+  it("does not relabel all-time counts in old snapshots as window observations", async () => {
+    const data = observation();
+    await mount(component, { ...data, coverage: { ...data.coverage, tokensWithStoredTransfers: 10 } });
+    expect(host.querySelector(".scope-banner")?.textContent).toContain("Unknown of 10 canonical tokens with observed transfers in this window");
+  });
+
   it("shows 30% CURRENT rotation despite 61 prior completed rotations", async () => {
     await mount(component, observation());
     expect(host.querySelector(".scope-banner")?.textContent).toContain("30% of current rotation");
@@ -107,6 +123,12 @@ describe.each([{ name: "Overview", component: Overview }, { name: "Transfer Acti
     expect(vi.getTimerCount()).toBe(0);
     root = createRoot(host);
   });
+});
+
+it("explains that Activity Lens requires verified exposure even before current gate metadata arrives", async () => {
+  await mount(ActivityLens, []);
+  expect(host.querySelector(".scope-note")?.textContent).toContain("verified comparable observation exposure");
+  expect(host.querySelector(".scope-note")?.textContent).not.toContain("stored-transfer coverage");
 });
 
 it("defers Overview gas age to the ticking freshness panel without contradictory gas notes", async () => {

@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { canonicalAssets, tokens, tokenMetricSnapshots, sourceSyncState } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { fetchTokenMetadata } from "@/lib/sources/blockscout/token";
+import { isSourceBlocked, SourceRequestError } from "@/lib/sources/source-request";
 
 const DEFAULT_BATCH_SIZE = 50;
 
@@ -59,6 +60,7 @@ export async function syncTokenMetadata(): Promise<{
 
   let enriched = 0;
   let errors = 0;
+  let attempted = 0;
 
   try {
     const [canonical, stateRows] = await Promise.all([
@@ -71,59 +73,77 @@ export async function syncTokenMetadata(): Promise<{
     const startOffset = (previous?.nextOffset ?? 0) % canonical.length;
     const batch = rotatingSlice(canonical, startOffset, batchSize);
 
+    const failures: Record<string, number> = {};
+    const failed = (reason: string) => { errors++; failures[reason] = (failures[reason] ?? 0) + 1; };
     for (const asset of batch) {
-      const meta = await fetchTokenMetadata(asset.contractAddress);
-      if (!meta) {
-        errors++;
-        continue;
+      attempted++;
+      try {
+        const meta = await fetchTokenMetadata(asset.contractAddress);
+        if (!meta) { failed("not-found"); continue; }
+        if (meta.address.toLowerCase() !== asset.contractAddress.toLowerCase()) { failed("identity"); continue; }
+        // Null is unobserved, not a verified removal. Keep known token fields,
+        // but never copy old values into a newly timestamped metric observation.
+        const observed = {
+          ...(meta.symbol ? { symbol: meta.symbol } : {}),
+          ...(meta.name ? { name: meta.name } : {}),
+          ...(meta.decimals !== null ? { decimals: meta.decimals } : {}),
+          ...(meta.tokenType ? { tokenType: meta.tokenType } : {}),
+          ...(meta.isVerified !== null ? { isVerified: meta.isVerified } : {}),
+          ...(meta.isProxy !== null ? { isProxy: meta.isProxy } : {}),
+          ...(meta.implementationAddress !== null ? { implementationAddress: meta.implementationAddress } : {}),
+        };
+        const volumeUsd = meta.volume24h !== null && /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(meta.volume24h) && Number.isFinite(Number(meta.volume24h))
+          ? Number(meta.volume24h) : null;
+        const holderCount = meta.holdersCount !== null && Number.isSafeInteger(meta.holdersCount) && meta.holdersCount >= 0
+          ? meta.holdersCount : null;
+        if (Object.keys(observed).length === 0 && holderCount === null && volumeUsd === null) { failed("no-observations"); continue; }
+        const updatedTokens = await db.update(tokens).set({ ...observed, canonicalStatus: "CANONICAL", lastSeenAt: new Date() })
+          .where(eq(tokens.address, asset.contractAddress.toLowerCase()))
+          .returning({ address: tokens.address });
+        // A successful SQL statement can update zero rows. Such a no-op is not
+        // an enrichment and must not refresh source success or mint metrics.
+        if (updatedTokens.length === 0) { failed("token-not-stored"); continue; }
+        if (holderCount !== null || volumeUsd !== null) {
+          await db.insert(tokenMetricSnapshots).values({
+            tokenAddress: asset.contractAddress.toLowerCase(), window: "24h", holderCount, volumeUsd,
+            dataCompleteness: holderCount === null ? 0.35 : 0.6, calculatedAt: new Date(),
+          });
+        }
+        enriched++;
+      } catch (error) {
+        failed(error instanceof SourceRequestError ? `${error.code}/HTTP-${error.status ?? "unknown"}` : "request-or-persistence");
+        if (isSourceBlocked(error)) break;
       }
-
-      await db.update(tokens).set({
-        symbol: meta.symbol || asset.symbol,
-        name: meta.name || asset.name,
-        decimals: meta.decimals,
-        tokenType: meta.tokenType,
-        isVerified: meta.isVerified,
-        isProxy: meta.isProxy,
-        implementationAddress: meta.implementationAddress,
-        canonicalStatus: "CANONICAL",
-        lastSeenAt: new Date(),
-      }).where(eq(tokens.address, asset.contractAddress.toLowerCase()));
-
-      await db.insert(tokenMetricSnapshots).values({
-        tokenAddress: asset.contractAddress.toLowerCase(),
-        window: "24h",
-        holderCount: meta.holdersCount,
-        volumeUsd: meta.volume24h ? parseFloat(meta.volume24h) : null,
-        dataCompleteness: meta.holdersCount === null ? 0.35 : 0.6,
-        calculatedAt: new Date(),
-      });
-      enriched++;
     }
 
-    const rawNext = startOffset + batch.length;
+    const rawNext = startOffset + attempted;
     const wrapped = rawNext >= canonical.length;
     const nextOffset = rawNext % canonical.length;
-    const completedCycles = (previous?.completedCycles ?? 0) + (wrapped ? 1 : 0);
-    const scannedInCycle = wrapped ? nextOffset : Math.min(canonical.length, (previous?.scannedInCycle ?? 0) + batch.length);
+    const completedCycles = (previous?.completedCycles ?? 0) + (enriched > 0 && wrapped ? 1 : 0);
+    const scannedInCycle = enriched === 0 ? (previous?.scannedInCycle ?? 0)
+      : wrapped ? nextOffset : Math.min(canonical.length, (previous?.scannedInCycle ?? 0) + attempted);
     const cursor: MetadataCursor = { nextOffset, scannedInCycle, completedCycles, totalTokens: canonical.length };
 
     await db.update(sourceSyncState).set({
-      cursor,
-      lastSuccessAt: new Date(),
-      status: errors > 0 ? "degraded" : "success",
+      ...(enriched > 0 ? { cursor, lastSuccessAt: new Date() } : {}),
+      status: enriched === 0 ? "error" : errors > 0 ? "degraded" : "success",
       recordsProcessed: enriched,
-      lastError: errors > 0 ? `${errors} of ${batch.length} metadata requests returned no usable response` : null,
+      lastError: errors > 0 ? `${errors} of ${attempted} metadata requests failed; ${enriched} succeeded; ${batch.length - attempted} unattempted (${Object.entries(failures).map(([reason, count]) => `${reason}=${count}`).join(", ")})` : null,
+      ...(errors > 0 ? { lastErrorAt: new Date() } : {}),
     }).where(stateKey);
 
-    return { processed: batch.length, enriched, errors, completedCycles, scannedInCycle };
+    return { processed: attempted, enriched, errors, completedCycles, scannedInCycle };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof SourceRequestError
+      ? `Metadata request failed (${error.code}; HTTP ${error.status ?? "unknown"})`
+      : "Metadata sync failed (registry or persistence error)";
     await db.update(sourceSyncState).set({
       lastErrorAt: new Date(),
       lastError: message,
-      status: "error",
+      status: enriched > 0 ? "degraded" : "error",
+      recordsProcessed: enriched,
+      ...(enriched > 0 ? { lastSuccessAt: new Date() } : {}),
     }).where(stateKey);
-    throw error;
+    throw new Error(message);
   }
 }

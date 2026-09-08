@@ -255,6 +255,7 @@ describe("GET /api/v1/lp-position", () => {
   );
 
   it("returns the snapshot with withheld fee/performance metadata, then 503/null on failure", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(NOW);
     const data = await fixture().fetch("1");
     vi.spyOn(adapter, "fetchLpPosition").mockResolvedValueOnce(data)
       .mockRejectedValueOnce(new Error("https://provider.invalid/SECRET"));
@@ -264,6 +265,7 @@ describe("GET /api/v1/lp-position", () => {
     expect(await success.json()).toEqual({ data, meta: {
       source: "Robinhood Chain public RPC", fees: "withheld", performance: "withheld", reason: expect.any(String),
     } });
+    await vi.advanceTimersByTimeAsync(31_000); // Successful source cache expired.
     const failure = await GET(request());
     expect(failure.status).toBe(503);
     expect(failure.headers.get("cache-control")).toContain("no-store");

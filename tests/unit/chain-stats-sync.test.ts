@@ -5,6 +5,16 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { sourceSyncState, tokenTransfers } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { syncChainStats } from "@/lib/jobs/sync-chain-stats";
+import { createSourceRequester, SourceRequestError } from "@/lib/sources/source-request";
+
+// Each DB-state scenario gets an isolated real request policy and virtual policy
+// clock. HTTP budgets/cooldowns have their own integration tests; they must not
+// leak across scenarios whose observation clock intentionally stays fixed.
+let request: ReturnType<typeof createSourceRequester>;
+vi.mock("@/lib/sources/source-request", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/sources/source-request")>();
+  return { ...actual, fetchSourceJson: (...args: Parameters<typeof actual.fetchSourceJson>) => request(...args) };
+});
 
 vi.mock("@/lib/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/lib/config", () => ({
@@ -86,6 +96,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   vi.stubGlobal("fetch", fetchMock);
+  let policyNow = now.getTime();
+  request = createSourceRequester({ now: () => policyNow, wait: async (ms) => { policyNow += ms; }, random: () => 0 });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -162,10 +174,10 @@ describe("syncChainStats same-source regression guard", () => {
 
   it.each([true, false])("preserves prior success/cursor on fetch error (prior stats: %s)", async (hasPrior) => {
     const db = fakeDatabase(hasPrior ? { cursor: oldStats, lastSuccessAt: oldTime } : null);
-    const error = new Error("upstream unavailable");
-    fetchMock.mockRejectedValue(error);
+    const error = new SourceRequestError("network");
+    fetchMock.mockRejectedValue(new Error("upstream unavailable"));
 
-    await expect(syncChainStats()).rejects.toBe(error);
+    await expect(syncChainStats()).rejects.toMatchObject({ code: "network", message: error.message });
 
     const stats = db.rows.get("blockscout:chain-stats");
     expect(stats).toMatchObject({ status: "error", lastError: error.message, lastErrorAt: now });

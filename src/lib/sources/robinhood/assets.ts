@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchSourceJson } from "@/lib/sources/source-request";
 import { getAPIs, getChain } from "@/lib/config";
 import type { CanonicalAsset } from "@/lib/domain/identity";
 export type { CanonicalAsset, CanonicalStatus } from "@/lib/domain/identity";
@@ -14,18 +15,17 @@ export {
 // Each asset has deployments: [{ contractAddress, chainId, networkName }]
 
 const rawAssetSchema = z.object({
-  id: z.string(),
-  tokenSymbol: z.string(),
+  id: z.string().min(1),
+  tokenSymbol: z.string().min(1),
   tokenName: z.string().nullable().optional(),
   deployments: z
     .array(
       z.object({
-        contractAddress: z.string(),
-        chainId: z.number(),
+        contractAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+        chainId: z.number().int().positive(),
         networkName: z.string().optional(),
       }),
-    )
-    .optional(),
+    ),
   currentMultiplier: z.string().optional(),
   pendingMultiplier: z.string().nullable().optional(),
   status: z.string().optional(),
@@ -39,31 +39,35 @@ export type RawRobinhoodAsset = z.infer<typeof rawAssetSchema>;
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
-  const response = await fetch(getAPIs().robinhood.assetsUrl, {
-    headers: { "Accept": "application/json" },
-    next: { revalidate: 3600 }, // cache 1 hour
+  const data = await fetchSourceJson("robinhood", getAPIs().robinhood.assetsUrl, {
+    headers: { Accept: "application/json" }, scope: "assets",
   });
-
-  if (!response.ok) {
-    throw new Error(`Robinhood assets API failed: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  const assets = Array.isArray(data) ? data : data.assets || [];
+  const envelope = z.union([
+    z.array(rawAssetSchema).min(1),
+    z.object({ assets: z.array(rawAssetSchema).min(1) }).transform((value) => value.assets),
+  ]).safeParse(data);
+  // Validate the entire registry before approving any identity; never silently
+  // turn a partially malformed response into a smaller authoritative registry.
+  if (!envelope.success) throw new Error("Invalid Robinhood canonical registry");
+  const assets = envelope.data;
 
   const normalized: CanonicalAsset[] = [];
+  const ids = new Set<string>();
+  const addresses = new Set<string>();
 
   for (const raw of assets) {
-    const parsed = rawAssetSchema.safeParse(raw);
-    if (!parsed.success) continue;
-
-    const item = parsed.data;
+    const item = raw;
 
     // Contract lives in deployments[] — find the Robinhood Chain deployment
-    const deployment = (item.deployments || []).find(
-      (d) => d.chainId === getChain().id && d.contractAddress,
-    );
-    if (!deployment) continue; // not deployed on Robinhood Chain
+    if (ids.has(item.id)) throw new Error("Ambiguous Robinhood canonical registry asset ID");
+    ids.add(item.id);
+    const deployments = item.deployments.filter((deployment) => deployment.chainId === getChain().id);
+    if (deployments.length > 1) throw new Error("Ambiguous Robinhood canonical registry deployment");
+    const deployment = deployments[0];
+    if (!deployment) continue; // Valid asset explicitly not deployed on this chain.
+    const address = deployment.contractAddress.toLowerCase();
+    if (addresses.has(address)) throw new Error("Ambiguous Robinhood canonical registry address");
+    addresses.add(address);
 
     normalized.push({
       id: `rhj-${item.id}`,
@@ -77,9 +81,10 @@ export async function fetchCanonicalAssets(): Promise<CanonicalAsset[]> {
       status: item.status || null,
       tradingCapabilities: item.tradingCapabilities || null,
       isin: item.isin || null,
-      sourceUpdatedAt: new Date(),
+      sourceUpdatedAt: null,
     });
   }
 
+  if (normalized.length === 0) throw new Error("Robinhood canonical registry has no usable deployments");
   return normalized;
 }
