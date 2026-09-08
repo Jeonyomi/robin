@@ -54,6 +54,9 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 - Independent chain, gas, transfer observation and index timestamps; explicit unknown, stale and future states
 - Current rotation progress separated from prior completed rotations; age labels update without refetching
 - Chain observed means the last accepted stats fetch; provider counters can still lag the chain
+- Manual Refresh preserves the selected window; visible tab returns re-fetch after at least one minute since the last request settled, with no polling
+- Screen receipt time is separate from source observation time; same-window refresh failures retain prior evidence with an explicit warning
+- LP Leaders, Meme / Stock Pairs, and Meme Leaders capability summaries include coverage limits and direct workspace links; no extra LP/Meme API reads on Overview
 - Hourly transfer and address participation trend
 - Explicit withholding of cross-token rankings until observation exposure is comparable
 - Latest raw transfer observations

@@ -7,6 +7,8 @@ import { observationStatus } from "@/lib/observation-status";
 import Link from "next/link";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
+import { OverviewResearch } from "@/components/overview-research";
+import "./overview.css";
 
 const WINDOWS = ["1h", "6h", "24h"];
 
@@ -48,7 +50,7 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 
 export default function DashboardPage() {
   const [window, setWindow] = useState("24h");
-  const { data, loading, error } = useObservation(`/api/v1/overview?window=${window}`, selectOverview);
+  const { data, loading, error, refresh, receivedAt } = useObservation(`/api/v1/overview?window=${window}`, selectOverview, { refreshOnReturnMs: 60_000 });
 
   return (
     <div className="page-shell">
@@ -74,7 +76,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="toolbar">
+      <div className="toolbar overview-toolbar">
         <div className="window-tabs" aria-label="Observation window">
           {WINDOWS.map((item) => (
             <button key={item} className={window === item ? "active" : ""} aria-pressed={window === item} onClick={() => setWindow(item)}>
@@ -82,11 +84,30 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
+        <button type="button" className="overview-refresh-button" onClick={refresh} disabled={loading}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
         <p>{loading ? "Refreshing observation…" : `Window ending ${relativeTime(data?.activity.lastObservedAt)}`}</p>
       </div>
 
-      {error ? (
-        <div className="empty-state">The latest observation could not be loaded. Check Data Sources for source health.</div>
+      <div className="overview-refresh-status" aria-label="Screen refresh status" role="status">
+        <p>
+          <strong>Screen received:</strong>{" "}
+          {receivedAt != null ? <time dateTime={new Date(receivedAt).toISOString()}>{new Date(receivedAt).toISOString().replace("T", " ").replace(".000Z", " UTC").replace("Z", " UTC")}</time> : "Not received yet"}
+        </p>
+        <p>A successful API response, not a new source observation. Cached data may be returned. Refreshes on tab return after 1 minute; no background polling.</p>
+      </div>
+      {error && data && (
+        <div className="overview-refresh-warning" role="alert">
+          <strong>Refresh failed.</strong> Previously loaded data is still shown. Source timestamps are unchanged. Retry with Refresh or check <Link href="/settings/data-sources">Data Sources</Link>.
+        </div>
+      )}
+
+      {error && !data ? (
+        <>
+          <div className="empty-state" role="alert">The latest observation could not be loaded. Retry with Refresh or check <Link href="/settings/data-sources">Data Sources</Link> for source health.</div>
+          <OverviewResearch />
+        </>
       ) : (
         <>
           <section className="metric-grid metric-grid-five" aria-label="Observed activity and network gas summary">
@@ -105,6 +126,8 @@ export default function DashboardPage() {
             <CurrentRotation coverage={data?.coverage} />
             <p className="scope-note">{data?.dataQuality.note ?? "Waiting for the first transfer-index cycle."}</p>
           </section>
+
+          <OverviewResearch />
 
           <section className="dashboard-grid">
             <article className="panel panel-wide">

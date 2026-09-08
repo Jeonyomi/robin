@@ -1,0 +1,16 @@
+.overview-toolbar { flex-wrap: wrap; gap: 10px; }
+.overview-toolbar > p { margin-left: auto; overflow-wrap: anywhere; }
+.overview-refresh-button { border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; background: #fff; color: var(--foreground); font-size: 12px; font-weight: 600; cursor: pointer; }
+.overview-refresh-button:hover:not(:disabled) { background: var(--secondary); }
+.overview-refresh-button:disabled { opacity: .6; cursor: wait; }
+.overview-refresh-button:focus-visible { outline: 2px solid #257d4d; outline-offset: 3px; }
+.overview-refresh-status { display: grid; gap: 5px; padding: 0 2px; margin-bottom: 18px; color: var(--muted-foreground); font-size: 11px; line-height: 1.6; }
+.overview-refresh-status p { margin: 0; }
+.overview-refresh-status strong { color: var(--foreground); }
+.overview-refresh-status time { overflow-wrap: anywhere; }
+.overview-refresh-warning { margin-bottom: 14px; padding: 14px 18px; border: 1px solid #d9b973; border-radius: 10px; color: #674c17; background: #fff9ed; font-size: 12px; line-height: 1.6; }
+.overview-refresh-warning a { text-decoration: underline; }
+@media (max-width: 600px) {
+  .overview-toolbar > p { flex-basis: 100%; margin-left: 0; }
+  .overview-refresh-status { font-size: 12px; }
+}
