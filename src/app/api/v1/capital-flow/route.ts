@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const window = parseObservationWindow(request);
     if (!window) return invalidWindowResponse();
 
-    const database = await tryDatabase(() => getOverviewData(getDb(), window));
+    const database = await tryDatabase(() => getOverviewData(getDb(), window, { includeTopTokens: false }));
     if (database.ok) {
       return NextResponse.json({
         data: { ...database.data, topTokens: [] },

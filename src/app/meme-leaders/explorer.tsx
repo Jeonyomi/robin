@@ -7,11 +7,14 @@ const MAX_AGE = 5 * 60_000;
 const EXPLORER = "https://robinhoodchain.blockscout.com";
 type Sort = "trending" | "volume" | "liquidity" | "change";
 const valid = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value);
-const money = (value: number | null, price = false) => !valid(value) ? "N/A" : new Intl.NumberFormat("en-US", {
-  style: "currency", currency: "USD", notation: price ? value !== 0 && Math.abs(value) < 0.000001 ? "scientific" : "standard" : "compact",
-  ...(price ? { maximumSignificantDigits: 6 } : { maximumFractionDigits: 2 }),
-}).format(value);
-const count = (value: number | null) => valid(value) ? new Intl.NumberFormat("en-US").format(value) : "N/A";
+// Reuse immutable formatters across rows and display-clock renders.
+const compactUsd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 2 });
+const priceUsd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "standard", maximumSignificantDigits: 6 });
+const smallPriceUsd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "scientific", maximumSignificantDigits: 6 });
+const integer = new Intl.NumberFormat("en-US");
+const money = (value: number | null, price = false) => !valid(value) ? "N/A"
+  : (price ? value !== 0 && Math.abs(value) < 0.000001 ? smallPriceUsd : priceUsd : compactUsd).format(value);
+const count = (value: number | null) => valid(value) ? integer.format(value) : "N/A";
 const time = (value: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().replace("T", " ").replace(".000Z", " UTC") : "N/A";
 const short = (value: string) => value.length > 22 ? `${value.slice(0, 10)}…${value.slice(-8)}` : value;
 

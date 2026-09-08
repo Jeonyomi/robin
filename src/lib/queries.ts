@@ -238,7 +238,11 @@ function parseTransferCursor(value: unknown) {
   };
 }
 
-export async function getOverviewData(db: Db, window: string): Promise<OverviewData> {
+export async function getOverviewData(
+  db: Db,
+  window: string,
+  { includeTopTokens = true }: { includeTopTokens?: boolean } = {},
+): Promise<OverviewData> {
   const hours = windowHours(window);
   const now = new Date();
   const windowStart = new Date(now.getTime() - hours * 60 * 60 * 1000);
@@ -285,7 +289,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
       FROM bucket_counts b LEFT JOIN address_counts a USING (bucket)
       ORDER BY b.bucket
     `),
-    db.execute<LeaderRow>(sql`
+    includeTopTokens ? db.execute<LeaderRow>(sql`
       WITH counts AS (
         SELECT token_address,
           count(*) FILTER (WHERE timestamp >= ${windowStart})::int AS current_transfers,
@@ -316,7 +320,7 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
       LEFT JOIN address_counts a ON a.token_address = c.token_address
       LEFT JOIN latest_metrics m ON m.token_address = c.token_address
       WHERE c.current_transfers > 0 AND t.canonical_status = 'CANONICAL'
-    `),
+    `) : null,
     db.select({
       txHash: tokenTransfers.txHash,
       logIndex: tokenTransfers.logIndex,
@@ -357,32 +361,35 @@ export async function getOverviewData(db: Db, window: string): Promise<OverviewD
     ? Math.round((scannedInCycle / trackedTokens) * 100)
     : 0;
 
-  const rawLeaders = leadersResult.rows.map((row) => ({
-    address: row.token_address,
-    symbol: row.symbol,
-    name: row.name,
-    transferCount: numberValue(row.current_transfers),
-    previousTransferCount: numberValue(row.previous_transfers),
-    activeAddresses: numberValue(row.active_addresses),
-    holderCount: row.holder_count == null ? null : numberValue(row.holder_count),
-    holderDelta: row.holder_delta == null ? null : numberValue(row.holder_delta),
-    latestBlock: numberValue(row.latest_block),
-    lastTransferAt: toIso(row.last_transfer_at) ?? new Date(0).toISOString(),
-  }));
-  const maxTransfers = Math.max(0, ...rawLeaders.map((row) => row.transferCount));
-  const maxAddresses = Math.max(0, ...rawLeaders.map((row) => row.activeAddresses));
-  const topTokens: ActivityTokenRow[] = rawLeaders
-    .map((row) => ({
-      ...row,
-      momentumPct: calculateMomentum(row.transferCount, row.previousTransferCount),
-      activityIndex: calculateActivityIndex(row.transferCount, row.activeAddresses, maxTransfers, maxAddresses),
-      evidence: buildActivityEvidence(row.transferCount, row.previousTransferCount, row.activeAddresses, row.holderDelta),
-    }))
-    .sort((a, b) => b.activityIndex - a.activityIndex
-      || b.transferCount - a.transferCount
-      || b.activeAddresses - a.activeAddresses
-      || a.address.localeCompare(b.address))
-    .slice(0, 12);
+  let topTokens: ActivityTokenRow[] = [];
+  if (leadersResult) {
+    const rawLeaders = leadersResult.rows.map((row) => ({
+      address: row.token_address,
+      symbol: row.symbol,
+      name: row.name,
+      transferCount: numberValue(row.current_transfers),
+      previousTransferCount: numberValue(row.previous_transfers),
+      activeAddresses: numberValue(row.active_addresses),
+      holderCount: row.holder_count == null ? null : numberValue(row.holder_count),
+      holderDelta: row.holder_delta == null ? null : numberValue(row.holder_delta),
+      latestBlock: numberValue(row.latest_block),
+      lastTransferAt: toIso(row.last_transfer_at) ?? new Date(0).toISOString(),
+    }));
+    const maxTransfers = Math.max(0, ...rawLeaders.map((row) => row.transferCount));
+    const maxAddresses = Math.max(0, ...rawLeaders.map((row) => row.activeAddresses));
+    topTokens = rawLeaders
+      .map((row) => ({
+        ...row,
+        momentumPct: calculateMomentum(row.transferCount, row.previousTransferCount),
+        activityIndex: calculateActivityIndex(row.transferCount, row.activeAddresses, maxTransfers, maxAddresses),
+        evidence: buildActivityEvidence(row.transferCount, row.previousTransferCount, row.activeAddresses, row.holderDelta),
+      }))
+      .sort((a, b) => b.activityIndex - a.activityIndex
+        || b.transferCount - a.transferCount
+        || b.activeAddresses - a.activeAddresses
+        || a.address.localeCompare(b.address))
+      .slice(0, 12);
+  }
 
 
   const lastIndexedAt = toIso(transferState?.lastSuccessAt);

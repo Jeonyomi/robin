@@ -33,6 +33,8 @@ const MAX_SNAPSHOT_AGE_MS = 3 * 60 * 60 * 1000;
 let cached: Snapshot | null = null;
 let cachedAt = 0;
 let lastError: string | null = null;
+let pending: Promise<Snapshot | null> | null = null;
+let retryAt = 0;
 
 /** Why the snapshot is unavailable — surfaced in API meta for debugging. */
 export function getSnapshotStatus(): { urlConfigured: boolean; lastError: string | null } {
@@ -65,39 +67,54 @@ export function snapshotExistsLocally(): boolean {
 /** Load the latest published snapshot (Blob URL first, then local file). */
 export async function loadSnapshot(): Promise<Snapshot | null> {
   const now = Date.now();
-  if (cached && now - cachedAt < TTL_MS) return cached;
-  cached = null;
+  if (cached && now >= cachedAt && now - cachedAt < TTL_MS && freshSnapshot(cached, now)) return cached;
+  if (pending) return pending;
+  if (now < retryAt) return null;
+  pending = readSnapshot().then((data) => {
+    retryAt = data ? 0 : Date.now() + 30_000;
+    return data;
+  }).finally(() => { pending = null; });
+  return pending;
+}
 
+async function readSnapshot(): Promise<Snapshot | null> {
+  cached = null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
   try {
     const url = new URL(snapshotUrl());
-    url.searchParams.set("read", String(Math.floor(now / TTL_MS)));
-    const res = await fetch(url, { cache: "no-store" });
+    url.searchParams.set("read", String(Math.floor(Date.now() / TTL_MS)));
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
     if (res.ok) {
-      cached = freshSnapshot(await res.json(), now);
+      cached = freshSnapshot(await res.json());
       if (cached) {
         cachedAt = Date.now();
         lastError = null;
         return cached;
       }
       lastError = "snapshot-stale-or-invalid";
-      console.error("Snapshot rejected because it is stale or invalid");
     } else {
       lastError = `fetch failed: ${res.status}`;
-      console.error(`Snapshot fetch failed: ${res.status} ${res.statusText}`);
     }
+  } catch {
+    // Do not expose configured URLs or underlying provider errors.
+    lastError = "snapshot-load-failed";
+  } finally {
+    clearTimeout(timeout);
+  }
 
+  // A thrown/aborted Blob read must not bypass the local fallback.
+  try {
     if (snapshotExistsLocally()) {
-      cached = freshSnapshot(JSON.parse(fs.readFileSync(localSnapshotPath(), "utf8")), now);
+      cached = freshSnapshot(JSON.parse(fs.readFileSync(localSnapshotPath(), "utf8")));
       if (cached) {
         cachedAt = Date.now();
         lastError = null;
       }
     }
-  } catch (error) {
+  } catch {
     lastError = "snapshot-load-failed";
-    console.error("Failed to load snapshot:", error);
   }
-
   return cached;
 }
 
