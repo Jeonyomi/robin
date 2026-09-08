@@ -16,6 +16,15 @@ async function setup(transform: (method: string, result: unknown, id: number) =>
  return {reader, requests, budgetPath};
 }
 describe("RPC transfer reader",()=>{
+ it("paces requests at least 1500ms apart without increasing the daily budget",async()=>{
+  const {reader,budgetPath}=await setup();
+  await reader.chainId();
+  const first=JSON.parse(await readFile(budgetPath,"utf8"));
+  await reader.head();
+  const second=JSON.parse(await readFile(budgetPath,"utf8"));
+  expect(second.nextStart-first.nextStart).toBeGreaterThanOrEqual(1500);
+  expect(second.calls).toBe(2);
+ });
  it.each([null, [{...log,removed:true}], [{...log,topics:[]}], [{...log,address:`0x${"9".repeat(40)}`}], [{...log,blockNumber:"0x2"}], [{...log,data:"0x1"}], [{...log,blockHash:`0x${"b".repeat(64)}`}], [log,{...log,data:`0x${"0".repeat(64)}`} ]].map(bad=>[bad]))("rejects malformed or unverified log scope %#",async(bad)=>{const {reader}=await setup((m,r)=>m==="eth_getLogs"?bad:r);await expect(reader.range(1,1,[{address,decimals:2}])).rejects.toThrow();});
  it("rejects wrong RPC identity and envelope",async()=>{for(const result of [Response.json({jsonrpc:"2.0",id:99,result:"0x1237"}),Response.json({jsonrpc:"1.0",id:1,result:"0x1237"}),"0x1"]){const {reader}=await setup(()=>result); await expect(reader.chainId()).rejects.toThrow();}});
  it("stops 429 and persists cooldown",async()=>{const {reader,requests,budgetPath}=await setup(()=>new Response("secret",{status:429}));await expect(reader.head()).rejects.toThrow("HTTP_429");await expect(reader.head()).rejects.toThrow();expect(requests).toHaveLength(1);const {reader:next,requests:nextRequests}=await setup(undefined,{budgetPath});await expect(next.head()).rejects.toThrow("COOLDOWN");expect(nextRequests).toHaveLength(0);});

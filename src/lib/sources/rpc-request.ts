@@ -34,7 +34,7 @@ export function createRpcRequest(options: RpcReaderOptions={}) {
   if(stopped) fail("STOPPED"); if(remaining()<=0) fail("DEADLINE");
   if(calls>=Math.min(96,options.maxCalls??96)) fail("CALL_LIMIT");
   let endpoint:string; try {const chain=getChain();if(chain.id!==4663) fail("CHAIN_ID"); endpoint=chain.rpcUrl;}catch(e){if(e instanceof RpcTransferError)throw e;return fail("CONFIG");}
-  const wait=await budget(file,now(),s=>{const day=new Date(now()).toISOString().slice(0,10);if(s.cooldownUntil>now())fail("COOLDOWN");if(s.day!==day){s.day=day;s.calls=0;}if(s.calls>=10000)fail("DAILY_LIMIT");const wait=Math.max(0,s.nextStart-now());if(wait>=remaining())fail("DEADLINE");s.calls++;s.nextStart=now()+wait+350;return wait;});
+  const wait=await budget(file,now(),s=>{const day=new Date(now()).toISOString().slice(0,10);if(s.cooldownUntil>now())fail("COOLDOWN");if(s.day!==day){s.day=day;s.calls=0;}if(s.calls>=10000)fail("DAILY_LIMIT");const wait=Math.max(0,s.nextStart-now());if(wait>=remaining())fail("DEADLINE");s.calls++;s.nextStart=now()+wait+1500;return wait;});
   await sleep(wait); if(remaining()<=0)fail("DEADLINE"); calls++;
   const id=calls, controller=new AbortController();
   let timer:ReturnType<typeof setTimeout> | undefined;
