@@ -8,21 +8,24 @@ export function sourceRetryAfter(value: string | null, now = Date.now()): number
 }
 
 /** JSON-RPC batches are forbidden. A queue wait must not consume the network timeout. */
-export function createPacedLpFetch(signal: AbortSignal, options: { fetch?: typeof fetch; intervalMs?: number; networkTimeoutMs?: number; now?: () => number } = {}): typeof fetch {
+export function createPacedLpFetch(signal: AbortSignal, options: { fetch?: typeof fetch; intervalMs?: number; logIntervalMs?: number; networkTimeoutMs?: number; now?: () => number } = {}): typeof fetch {
   const send = options.fetch ?? fetch;
   const now = options.now ?? Date.now;
   const interval = options.intervalMs ?? 650;
   const timeout = options.networkTimeoutMs ?? 10_000;
   const stopped = new AbortController();
   const collectionSignal = AbortSignal.any([signal, stopped.signal]);
-  let nextAt = 0; let requests = 0; let rateError: LpUnavailableError | undefined;
-  return async (url, init) => {
+  let nextAt = 0; let nextLogAt = 0; let requests = 0; let rateError: LpUnavailableError | undefined;
+  const paced: typeof fetch = async (url, init) => {
     if (rateError) throw rateError;
     collectionSignal.throwIfAborted();
     const body = JSON.parse(String(init?.body ?? "{}"));
     if (Array.isArray(body) || ++requests > 180) throw new Error("LP source request budget exceeded.");
-    const delay = Math.max(0, nextAt - now());
-    nextAt = Math.max(now(), nextAt) + interval;
+    const isLog = body.method === "eth_getLogs";
+    const slot = Math.max(now(), nextAt, isLog ? nextLogAt : 0);
+    const delay = Math.max(0, slot - now());
+    nextAt = slot + interval;
+    if (isLog) nextLogAt = slot + (options.logIntervalMs ?? 1500);
     try { if (delay) await wait(delay, undefined, { signal: collectionSignal }); }
     catch (error) { throw rateError ?? error; }
     if (rateError) throw rateError;
@@ -53,5 +56,16 @@ export function createPacedLpFetch(signal: AbortSignal, options: { fetch?: typeo
       return new Response(bytes, { status: response.status, headers: { "Content-Type": "application/json" } });
     } catch (error) { throw rateError ?? error; }
     finally { clearTimeout(timer); }
+  };
+  // Expensive history queries must not overlap, even when their network latency
+  // exceeds the global start-spacing interval. Never parallelize eth_getLogs.
+  let logTail: Promise<void> = Promise.resolve();
+  return (url, init) => {
+    let isLog = false;
+    try { isLog = JSON.parse(String(init?.body ?? "{}"))?.method === "eth_getLogs"; } catch { /* paced rejects malformed requests. */ }
+    if (!isLog) return paced(url, init);
+    const request = logTail.then(() => paced(url, init));
+    logTail = request.then(() => undefined, () => undefined);
+    return request;
   };
 }
