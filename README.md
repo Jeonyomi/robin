@@ -4,6 +4,8 @@ Robinwatch collects free, publicly available Robinhood Chain data, stores the ra
 
 **Web app:** https://robinwatch24.vercel.app/
 
+**Repository:** https://github.com/Jeonyomi/robin · **X:** https://x.com/robinwatch24
+
 > Independent public-source research project. Not affiliated with or endorsed by Robinhood Markets, Inc. The product does not provide investment advice, trade execution, or predictive signals.
 
 ## Product question
@@ -16,6 +18,8 @@ Robinwatch answers this in three layers:
 2. **Tracked assets**: Robinhood's canonical asset registry matched by contract address.
 3. **Observed activity**: page-bounded token transfer events, unique addresses, and mint/burn events.
 
+Separate liquidity and token-discovery views add provider-reported market observations and bounded onchain LP evidence. They are not derived from transfer counts or merged into chain-wide totals.
+
 The dashboard keeps chain-wide statistics separate from the rotating tracked-token sample. Missing data remains unavailable rather than being replaced with synthetic values.
 
 ## Current free sources
@@ -26,6 +30,9 @@ The dashboard keeps chain-wide statistics separate from the rotating tracked-tok
 | Robinhood Price API | Reference bid/ask observations | Canonical assets where available |
 | Robinhood Chain Blockscout direct API | Chain stats, token metadata/counters, token transfers | Free public endpoint |
 | Robinhood Chain RPC | Anchored Uniswap v3 NFT state, fee logs and mint receipts | Bounded, separately collected LP sample |
+| Robinhood Chain RPC | Verified Uniswap v3/v4 pool state and related NFT inspection | Bounded, on-demand Meme / Stock Pairs reads |
+| DEX Screener public API | Candidate stock/non-stock pools and reported market metrics | Fixed stock basket; provider-limited discovery |
+| GeckoTerminal public API | Trending pools, token categories and holder observations | First-page sample; bounded metadata lookups |
 
 Default Blockscout base URL:
 
@@ -44,6 +51,8 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 - Stored transfer events in the selected window
 - Unique addresses, including contracts, and active tracked tokens
 - Current transfer-index rotation coverage and freshness
+- Independent chain, gas, transfer observation and index timestamps; explicit unknown, stale and future states
+- Current rotation progress separated from prior completed rotations; age labels update without refetching
 - Hourly transfer and address participation trend
 - Explicit withholding of cross-token rankings until observation exposure is comparable
 - Latest raw transfer observations
@@ -53,6 +62,7 @@ The multi-chain `api.blockscout.com` endpoint is not the default because anonymo
 - Exact contract match against Robinhood's canonical registry
 - Blockscout holder observations and holder change when available
 - Metadata freshness and data completeness
+- Latest stored metrics per token for the selected window; missing metrics remain unavailable
 - Direct contract links
 
 ### Transfer Activity
@@ -69,7 +79,7 @@ The ranking remains explicitly page-bounded and may be a lower bound for busy to
 
 ## LP Leaders
 
-`/liquidity` now opens an **automatic LP NFT discovery page**, not a personal token-ID form or manual scenario editor. It displays a bounded sample of existing Uniswap v3 NFTs on Robinhood Chain and ranks supported pairs by **lifetime recorded WETH fees**.
+The **LP Leaders** tab at `/liquidity#lp-leaders` displays a bounded sample of existing Uniswap v3 NFTs on Robinhood Chain and ranks supported pairs by **lifetime recorded WETH fees**. `/liquidity` opens **Meme / Stock Pairs** by default; only the selected tab mounts and starts its data reads.
 
 - Up to 12 stratified enumerable NFT indices, with total/sample/eligible/excluded/unsupported counts
 - WETH fee ranking, current spot-valued LP inventory, range-state filters and expandable NFT details
@@ -86,6 +96,34 @@ The public RPC is rate-limited and not recommended by its operator for productio
 
 See [LP Leaders methodology and source limits](docs/lp-workspace.md). The older read-only `/api/v1/lp-position` endpoint remains available for compatibility but is no longer the page's user flow.
 
+## Meme / Stock Pairs
+
+The default `/liquidity` tab follows **discover a pair → inspect its actual pool state → inspect related LP positions**.
+
+- Address-matched Robinhood stock basket: NVDA, HIMS, MU, MSTR and TSLA; up to 60 deduplicated provider-limited pools
+- Provider-reported liquidity, volume and price information kept separate from block-anchored onchain observations
+- Verified Uniswap v3/v4 pool inspection; unsupported protocols remain explicitly unsupported
+- Bounded related-position sampling or manual public NFT-ID inspection against the exact selected pool
+- No wallet connection, signing, approvals, trades or token transfers
+
+Unlike the storage-only LP Leaders tab, explicit pool/position inspection can perform bounded RPC reads. A non-stock token is a **candidate**, not a verified meme project. An empty LP sample does not prove that a pool has no positions. Fee returns, APR/APY, impermanent loss and net PnL are withheld without verified accounting history.
+
+See [Meme / Stock Pairs methodology and API](docs/meme-stock-pairs.md).
+
+## Meme Leaders
+
+`06 Meme Leaders` at `/meme-leaders` opens **All candidates** by default. The optional **Source-tagged** filter shows provider meme-related categories, not internally inferred ticker/name classifications.
+
+- GeckoTerminal's first trending-pool page, bounded to 20 pools and deduplicated by base-token address
+- Canonical Robinhood stock base tokens and known ETH/WETH/USDG addresses excluded
+- Provider order by default; price change, reported volume and liquidity offer alternate views of the same sample
+- Up to 12 token-info lookups; missing categories, holders and numeric observations stay unknown
+- Per-instance caching and request coalescing; no background polling, manual refresh, and ranked-feed expiry after five minutes
+
+This is neither a whole-chain ranking nor a security or authenticity check. Metrics refer to a representative observed pool, not all markets for each token. Retrieval time is not the provider's observation timestamp.
+
+See [Meme Leaders sources and limits](docs/meme-leaders.md).
+
 ## Collection design
 
 The 10-minute sync uses a bounded rotating collector:
@@ -98,7 +136,7 @@ The 10-minute sync uses a bounded rotating collector:
 - Concurrency limited to 4 workers
 - Deduplication by transaction hash + log index + token address
 
-At default settings, the 194-token registry receives an initial full rotation over approximately nine successful runs, about 90 minutes when every run completes within its interval. Page limits mean transfer totals can be lower bounds for very active tokens. The UI states this explicitly.
+Rotation duration depends on the current registry size and successful collector runs; it is not a fixed completeness guarantee. Page limits mean transfer totals can be lower bounds for very active tokens. The UI reports current rotation progress separately from past completed rotations.
 
 The public observation windows are `1h`, `6h`, and `24h`. Longer comparative windows remain disabled until sufficient equivalent history is available.
 
@@ -149,18 +187,30 @@ Robinhood APIs     Blockscout direct API
 - Neon Postgres / Drizzle ORM
 - Vercel deployment
 - Optional Vercel Blob read fallback
+- Bounded provider discovery and on-demand RPC inspection for Meme / Stock Pairs; GeckoTerminal-backed Meme Leaders
+- Privacy-filtered Vercel Web Analytics for production page views
 - Windows Task Scheduler for 10-minute collection with overlapping runs blocked
 - Separate two-minute LP collector, dedicated Neon snapshot storage, and storage-only public LP reads
 
 ## Local setup
 
+Use Node.js compatible with the installed Next.js version and the pinned `pnpm@11.25.0`. For a UI-only start:
+
 ```bash
 pnpm install
-vercel env pull .env
-pnpm db:migrate
-pnpm sync
 pnpm dev
 ```
+
+Data-backed development requires an approved development database and environment configuration. Missing sources are not replaced with demo data. Keep credentials outside Git; do not pull production credentials into an unapproved environment.
+
+For an explicitly selected development database only, initialize and populate it separately:
+
+```bash
+pnpm db:migrate
+pnpm sync
+```
+
+These commands write to the configured database and contact external sources. They are not required documentation checks and must not be run against production as a setup shortcut.
 
 Targeted jobs:
 
@@ -189,6 +239,31 @@ DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 - Partial source failures are recorded as degraded state; `/api/v1/source-health` reports the same overall status in its data and metadata, including LP freshness and the latest collection attempt.
 - Activity snapshot publication requires the transfer job to succeed; a stats failure can retain prior stats with their original timestamps. LP publication requires a verified, non-regressing observation; failures update attempt metadata, not the accepted observation.
 - Activity is not labeled as demand, volume, profit, or investment opportunity.
+- A snapshot must contain the exact requested `1h`, `6h` or `24h` window. When an available snapshot lacks that entry, the four observation APIs return HTTP 503 with `data: null` and degraded metadata, rather than relabeling 24h data.
+- Window/filter changes cancel obsolete requests and reject stale completions, including A → B → A selection changes; old-condition data is hidden while new-condition data loads.
+
+## Performance improvements
+
+- Overview and Transfer Activity skip an unused ranking query while Activity Lens keeps its ranking behavior.
+- Stock Token metrics use PostgreSQL `DISTINCT ON` with a narrow projection and deterministic ordering instead of transferring all metric history for JavaScript deduplication.
+- Snapshot fallback coalesces concurrent requests per instance, checks source age, bounds upstream fetches to eight seconds and applies a 30-second failure cooldown.
+- Meme Leaders reuses numeric formatters across renders; freshness clocks do not trigger extra network requests.
+
+These changes reduce redundant work and protect displayed observation identity. They do **not** establish a production latency improvement percentage, a database query plan, or repaired upstream collection. See the [follow-up implementation and verification](docs/performance-followup-20260908.md); the [initial audit](docs/performance-review-20260908.md) records the earlier, pre-deployment state.
+
+## Web Analytics and privacy
+
+Vercel Web Analytics is integrated once in the root layout with pinned `@vercel/analytics@2.0.1`, production-only collection and debug logging disabled.
+
+- Page views are limited to the canonical HTTPS site and an explicit public-route allowlist.
+- Queries and fragments are removed from analytics page URLs; valid token-detail addresses become `/tokens/[address]`.
+- Preview origins, unsupported/private/API paths and custom events are dropped.
+- Do Not Track, Global Privacy Control and the `va-disable` local opt-out are respected; inaccessible opt-out storage fails closed.
+- No wallet identity or custom event payload is supplied. Referrer/device statistics and hosting/RPC logs are separate from sanitized page URLs.
+
+The existing Hobby setup was retained without a paid upgrade. SDK deployment/loading and privacy tests are separate from actual visitor-event acceptance and dashboard aggregation; the latter have not been confirmed. Automated visits can be excluded by Vercel and are not evidence of organic traffic.
+
+See [Web Analytics configuration, cost boundary and verification](docs/web-analytics.md) and the site's [legal/privacy page](https://robinwatch24.vercel.app/legal).
 
 ## Known limitations
 
@@ -199,6 +274,7 @@ DATABASE_URL_UNPOOLED="postgresql://.../robin?sslmode=require"
 - Wallet ownership, PnL, and "smart money" labels are not asserted.
 - The dashboard is batch-updated rather than realtime.
 - The free Blockscout instance can rate-limit or temporarily fail.
+- DEX discovery and token metadata may be partial or rate-limited; provider categories do not establish safety or official endorsement.
 - The LP collector can also encounter RPC rate limits. Web deployment does not repair external API availability or keep a stopped collector running.
 
 ## Verification
@@ -208,10 +284,17 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-pnpm db:check
 ```
 
-UI E2E is intentionally kept to a single final core smoke run after static checks.
+If Vitest's default worker pool times out before running assertions in the Windows/WSL environment, use `pnpm test --pool=threads`.
+
+`pnpm db:check` is a separate database-connected check; run it only with the intended environment. Browser smoke tests are separate from unit/static checks and are not implied by a successful build. Documentation-only changes need link, command and diff checks, not a database job or full product QA run.
+
+Latest implementation verification (8 September 2026): 475 unit tests across 26 files passed. The initial Analytics test-file lint error was corrected; the subsequent focused tests, scoped lint, type checking and production build passed. This is a dated verification record, not a claim that checks rerun automatically whenever this README changes.
+
+## Delivery
+
+Production code is delivered through GitHub `Jeonyomi/robin` on `main` and its Git-connected Vercel deployment. A local build or standalone CLI deployment is not evidence that GitHub is updated. Confirm the remote commit, Vercel Ready state and canonical domain before declaring a release complete. Web deployment does not start, repair or reconfigure the independent collectors.
 
 ## Documentation
 
@@ -219,3 +302,9 @@ UI E2E is intentionally kept to a single final core smoke run after static check
 - [Metrics](docs/metrics.md)
 - [Signals](docs/signals.md)
 - [Deployment](docs/deployment.md)
+- [LP Leaders methodology](docs/lp-workspace.md)
+- [Meme / Stock Pairs](docs/meme-stock-pairs.md)
+- [Meme Leaders](docs/meme-leaders.md)
+- [Performance follow-up](docs/performance-followup-20260908.md)
+- [Initial performance audit — historical baseline](docs/performance-review-20260908.md)
+- [Web Analytics and privacy](docs/web-analytics.md)
