@@ -72,7 +72,7 @@ export default function MemeLeadersExplorer() {
   const cooldown = useRef(0);
   const pending = useRef<AbortController | null>(null);
   const [search, setSearch] = useState("");
-  const [classification, setClassification] = useState("source-tagged");
+  const [classification, setClassification] = useState("all");
   const [sort, setSort] = useState<Sort>("trending");
   const [expanded, setExpanded] = useState<string | null>(null);
 

@@ -6,7 +6,7 @@
 
 Default order follows GeckoTerminal's Robinhood trending-pool order, deduplicated by base-token contract address. It is **not** an internally invented score, a whole-chain token ranking, guaranteed growth or a trading recommendation. Price-change, reported volume and liquidity sorts are alternate views of the same bounded sample.
 
-The default meme view uses provider meme-related categories. Other tokens are available separately as candidates because non-stock/actively traded does not imply meme. Source tagging is not a security audit, official endorsement or project authenticity verification.
+The default view is All candidates. The Source-tagged filter restricts results to provider meme-related categories. Candidate badges remain explicit because non-stock/actively traded does not imply meme. Source tagging is not a security audit, official endorsement or project authenticity verification.
 
 ## Sources and coverage
 
