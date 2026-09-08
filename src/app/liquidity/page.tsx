@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import LpExplorer from "./explorer";
+import LiquidityTabs from "./liquidity-tabs";
 import "./explorer.css";
 
 export const metadata: Metadata = {
@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function LiquidityPage() {
-  return <LpExplorer />;
+  return <LiquidityTabs />;
 }
