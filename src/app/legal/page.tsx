@@ -33,6 +33,7 @@ export default function LegalPage() {
         </article>
         <article className="panel">
           <h2>Privacy</h2>
+          <p>We use cookie-less Vercel Web Analytics for aggregate page-view statistics on the production site. Analytics page URLs are limited to supported public routes; query strings, fragments and token-address path segments are removed before page-view events are sent. We do not send custom analytics events or wallet identities. Browser Do Not Track and Global Privacy Control signals, and the local <code>va-disable</code> opt-out setting, are respected. This does not remove standard hosting or RPC logs. See <a href="https://vercel.com/docs/analytics/privacy-policy" target="_blank" rel="noreferrer">Vercel&apos;s analytics privacy information</a>.</p>
           <p>The application has no user accounts, wallet connection, advertising tracker, or profiling system. LP Leaders automatically requests a public NFT sample; it does not ask for your wallet or position ID and does not attribute public NFT owners or lifetime fee records to you. Legacy manual scenarios in this browser&apos;s local storage remain untouched and are not uploaded or used as chain evidence. Those records are not encrypted; shared browser profiles, extensions and site-data clearing can affect them.</p>
           <p>The server reads public NFT, pool and event records from the official Robinhood Chain RPC. These requests and page visits may appear in standard hosting/RPC logs, including IP address, user agent and timestamps under provider retention policies. No portfolio is saved, no financial transaction is submitted, and no Telegram notification or background price polling is started. The previous read-only position API remains available, but personal token-ID entry is no longer the page flow.</p>
         </article>
@@ -47,7 +48,7 @@ export default function LegalPage() {
         </article>
       </section>
 
-      <footer className="method-footer">Effective 5 September 2026. Material changes will be reflected in the public repository.</footer>
+      <footer className="method-footer">Effective 8 September 2026. Material changes will be reflected in the public repository.</footer>
     </div>
   );
 }
