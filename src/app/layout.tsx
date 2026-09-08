@@ -38,6 +38,7 @@ const navItems = [
   { href: "/capital-flow", marker: "03", label: "Transfers", description: "Raw onchain evidence" },
   { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Observed activity ranking" },
   { href: "/liquidity", marker: "05", label: "LP Leaders", description: "NFT fees and range research" },
+  { href: "/meme-leaders", marker: "06", label: "Meme Leaders", description: "Trending tokens and market activity" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
