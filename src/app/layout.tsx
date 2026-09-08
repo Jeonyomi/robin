@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://robinwatch-mu.vercel.app"),
+  metadataBase: new URL("https://robinwatch24.vercel.app"),
   title: {
     default: "Robinwatch · Robinhood Chain Onchain Observatory",
     template: "%s · Robinwatch Onchain Observatory",
@@ -23,6 +23,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+    site: "@robinwatch24",
+    creator: "@robinwatch24",
     title: "Robinwatch · Robinhood Chain Onchain Observatory",
     description: "Independent, source-labeled observations of public Robinhood Chain data.",
     images: [{ url: "/og-robinwatch.png", alt: "Robinwatch: Evidence-first analytics for Robinhood Chain" }],
@@ -72,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/legal">Legal & privacy</Link>
                 <a href="https://robinhoodchain.blockscout.com" target="_blank" rel="noreferrer">Explorer ↗</a>
                 <a href="https://github.com/Jeonyomi/robin" target="_blank" rel="noreferrer">Source ↗</a>
+                <a href="https://x.com/robinwatch24" target="_blank" rel="noopener noreferrer" aria-label="Robinwatch on X (@robinwatch24)">X ↗</a>
               </div>
             </header>
             <nav className="mobile-nav" aria-label="Mobile navigation">
@@ -81,7 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main id="main-content">{children}</main>
             <footer className="site-footer">
               <p>Independent public-source research project. Not affiliated with or endorsed by Robinhood Markets, Inc.</p>
-              <p><Link href="/legal">Terms, privacy & data use</Link> · No investment advice</p>
+              <p><a href="https://x.com/robinwatch24" target="_blank" rel="noopener noreferrer">X @robinwatch24 ↗</a> · <Link href="/legal">Terms, privacy & data use</Link> · No investment advice</p>
             </footer>
           </div>
         </div>
