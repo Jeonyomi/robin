@@ -14,9 +14,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("DEX/Gecko shared request policy", () => {
-  it("bounds cold-path metadata enrichment to four tokens", async () => {
+  it("keeps optional token metadata off the synchronous cold path", async () => {
     const { MEME_METADATA_ENRICH_LIMIT } = await import("@/lib/sources/meme-leaders");
-    expect(MEME_METADATA_ENRICH_LIMIT).toBe(4);
+    expect(MEME_METADATA_ENRICH_LIMIT).toBe(0);
   });
   it.each(["leaders", "discovery"])("sanitizes malformed canonical registry for %s", async name => {
     fetcher.mockResolvedValue(Response.json({ assets: "body-secret" }));
@@ -35,18 +35,18 @@ describe("DEX/Gecko shared request policy", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(shared.request.mock.calls.map(c => c[0])).toEqual(["robinhood", "dexscreener", "dexscreener"]);
   });
-  it("stops metadata after a 403 while retaining un-enriched leaders", async () => {
+  it("returns leaders without blocking on optional metadata", async () => {
     const tokens = [1, 2, 3].map(n => ({ id: `robinhood_${addr(n)}`, type: "token", attributes: { address: addr(n), name: `Token ${n}`, symbol: `T${n}` } }));
     const quote = { id: `robinhood_${addr(99)}`, type: "token", attributes: { address: addr(99), name: "NVDA", symbol: "NVDA" } };
     const data = tokens.map((t, i) => ({ id: `robinhood_${addr(i + 10)}`, type: "pool", attributes: { address: addr(i + 10) }, relationships: { base_token: { data: { id: t.id } }, quote_token: { data: { id: quote.id } }, dex: { data: { id: "uniswap" } } } }));
-    fetcher.mockResolvedValueOnce(Response.json(registry)).mockResolvedValueOnce(Response.json({ data, included: [...tokens, quote] })).mockImplementation(async () => new Response(null, { status: 403 }));
+    fetcher.mockResolvedValueOnce(Response.json(registry)).mockResolvedValueOnce(Response.json({ data, included: [...tokens, quote] }));
     const { fetchMemeLeaders } = await import("@/lib/sources/meme-leaders");
     const result = await fetchMemeLeaders();
     expect(result.tokens).toHaveLength(3);
-    expect(result.metadataRequested).toBe(1);
-    expect(result.metadataFailed).toBe(1);
-    expect(result.tokens.map(t => t.metadataStatus)).toEqual(["unavailable", "not-requested", "not-requested"]);
-    expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(shared.request.mock.calls.map(c => c[0])).toEqual(["robinhood", "geckoterminal", "geckoterminal"]);
+    expect(result.metadataRequested).toBe(0);
+    expect(result.metadataFailed).toBe(0);
+    expect(result.tokens.map(t => t.metadataStatus)).toEqual(["not-requested", "not-requested", "not-requested"]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(shared.request.mock.calls.map(c => c[0])).toEqual(["robinhood", "geckoterminal"]);
   });
 });
