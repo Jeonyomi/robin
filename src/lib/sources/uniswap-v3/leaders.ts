@@ -10,7 +10,7 @@ const MANAGER = "0x73991a25c818bf1f1128deaab1492d45638de0d3" as const;
 const FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa" as const;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const TIMEOUT_MS = LP_COLLECTION_TIMEOUT_MS;
-const MAX_SAMPLE = 12;
+const MAX_SAMPLE = 6;
 // Runtime bytecode matched Ethereum's canonical deployment independently.
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
 const MULTICALL_HASH = "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891";
