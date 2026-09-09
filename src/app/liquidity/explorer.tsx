@@ -54,7 +54,7 @@ export default function LpExplorer() {
     setLoading(true); setError(""); setSelected(null);
     const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
-      const response = await fetch("/api/v1/lp-leaders", { cache: "no-store", signal: controller.signal });
+      const response = await fetch("/api/v1/lp-leaders", { signal: controller.signal });
       if (!response.ok) {
         const requested = Number(response.headers.get("Retry-After"));
         const seconds = Number.isSafeInteger(requested) && requested > 0 ? requested : response.status === 429 ? 60 : 15;

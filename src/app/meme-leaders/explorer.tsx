@@ -86,7 +86,7 @@ export default function MemeLeadersExplorer() {
     setLoading(true); setError(""); setBoard(null); setExpanded(null);
     const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
-      const response = await fetch("/api/v1/meme-leaders", { cache: "no-store", signal: controller.signal });
+      const response = await fetch("/api/v1/meme-leaders", { signal: controller.signal });
       if (!response.ok) {
         const retry = response.headers.get("Retry-After");
         const until = retry && /^\d+$/.test(retry) ? Date.now() + Number(retry) * 1000 : retry ? Date.parse(retry) : NaN;

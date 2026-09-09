@@ -288,7 +288,7 @@ describe("LP leaders stored-snapshot API", () => {
   it("returns the validated stored observation with collector provenance, without RPC", async () => {
     const value = await record(); vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue(value);
     const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
-    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toContain("no-store");
+    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toContain("s-maxage=30");
     const body = await response.json(); expect(body.data).toEqual(value.data);
     expect(body.meta).toMatchObject({ mode: "scheduled-verified-snapshot", storage: "neon-postgres", collectionIntervalSeconds: 120, collector: value.collector });
     expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
