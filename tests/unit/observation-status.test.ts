@@ -192,8 +192,7 @@ it("distinguishes the provider block count and fetch age from chain head freshne
   expect(counters).toContain("Indexed block count");
   expect(counters).not.toContain("Block height");
   expect(counters).toContain("Latest tracked block");
-  expect(host.querySelector('[aria-label="Observation freshness"] .metric-note')?.textContent)
-    .toContain("Chain observed is the last accepted stats fetch, not the chain head time; provider counters may lag.");
+  expect(host.querySelector('[aria-label="Observation freshness"] .metric-note')).toBeNull();
 });
 
 it("keeps missing/invalid/future registry metadata dates distinct from holder observations", async () => {

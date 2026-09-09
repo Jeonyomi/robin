@@ -25,7 +25,6 @@ export function ObservationFreshness({ data }: { data: OverviewData | null }) {
           <strong title={timestamp ?? undefined} data-freshness={status}>{age}</strong>
         </div>;
       })}
-      <p className="metric-note">Fresh = timestamp within 3h. Chain observed is the last accepted stats fetch, not the chain head time; provider counters may lag. Each source is assessed separately; transfer recency does not establish chain freshness or complete coverage.</p>
     </div>
   );
 }
