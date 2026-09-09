@@ -73,7 +73,9 @@ export async function GET() {
     const lpLastSuccessAt = validSuccessAt(lpSnapshot?.collector.publishedAt, now);
     const lpTimesValid = lpLastSuccessAt !== null && validSuccessAt(lpSnapshot?.collector.lastAttemptAt, now) !== null;
     const lpAttemptFailed = lpSnapshot !== null && (!lpSnapshot.collector.lastAttemptOk || lpSnapshot.collector.lastError !== null);
-    const lpStatus = !lpSnapshot ? "unavailable" : lpUsable && lpTimesValid && !lpAttemptFailed ? "healthy" : "degraded";
+    // A fresh, verified snapshot remains operational after a transient failed
+    // refresh. Preserve the attempt warning without relabeling usable data.
+    const lpStatus = !lpSnapshot ? "unavailable" : lpUsable && lpTimesValid ? "healthy" : "degraded";
     const lpLastError = !lpRead.ok
       ? "Stored LP snapshot could not be read."
       : !lpSnapshot
@@ -91,31 +93,38 @@ export async function GET() {
     const sources = [
       {
         name: "Robinhood Assets API",
+        role: "active" as const,
         url: "https://api.robinhood.com/rhj/assets",
-        ...storedHealth(robinhoodState, now),
+        // This registry is maintained daily; allow normal schedule jitter.
+        ...storedHealth(robinhoodState, now, 26),
       },
       {
         name: chainUsesRpc ? "RPC Chain State" : "Blockscout Chain Stats",
+        role: "active" as const,
         url: chainUsesRpc ? "Configured chain RPC (chain 4663)" : "https://robinhoodchain.blockscout.com/api/v2/stats",
         ...storedHealth(blockscoutStatsState, now),
       },
       {
         name: gasUsesRpc ? "RPC Gas Price" : "Blockscout Gas Price",
+        role: "active" as const,
         url: gasUsesRpc ? "Configured chain RPC (chain 4663)" : "https://robinhoodchain.blockscout.com/api/v2/stats",
         ...storedHealth(gasState, now, 1),
       },
       {
-        name: "Blockscout Token Transfers",
+        name: "Legacy Blockscout Token Transfers",
+        role: "legacy" as const,
         url: "https://robinhoodchain.blockscout.com/api/v2/tokens/{address}/transfers",
         ...storedHealth(transferState, now),
       },
       {
         name: "RPC Token Transfers",
+        role: "active" as const,
         url: "Configured chain RPC (chain 4663)",
         ...storedHealth(rpcTransferState, now),
       },
       {
         name: "Database",
+        role: "active" as const,
         url: "Neon Postgres",
         status: databaseStatus,
         lastSuccessAt: database.ok ? database.data.readAt : null,
@@ -123,10 +132,12 @@ export async function GET() {
       },
       {
         name: "Uniswap V3 LP Snapshot",
+        role: "active" as const,
         url: "/api/v1/lp-leaders",
         status: lpStatus,
         lastSuccessAt: lpLastSuccessAt,
-        lastError: lpLastError,
+        lastError: lpStatus === "healthy" ? null : lpLastError,
+        warning: lpStatus === "healthy" && lpAttemptFailed ? lpLastError : null,
         observedAt: lpSnapshot?.data.observedAt ?? null,
         lastAttemptAt: lpSnapshot?.collector.lastAttemptAt ?? null,
         lastAttemptOk: lpSnapshot?.collector.lastAttemptOk ?? null,
@@ -135,7 +146,9 @@ export async function GET() {
         servedFrom: lpRead.ok ? "neon-postgres" : "unavailable",
       },
     ];
-    const overallStatus = sources.every((source) => source.status === "healthy") ? "healthy" : "degraded";
+    const overallStatus = sources
+      .filter((source) => source.role === "active")
+      .every((source) => source.status === "healthy") ? "healthy" : "degraded";
 
     return NextResponse.json({
       data: {
