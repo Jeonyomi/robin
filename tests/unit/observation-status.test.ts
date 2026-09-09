@@ -46,35 +46,10 @@ afterEach(async () => {
 });
 
 describe.each([{ name: "Overview", component: Overview }, { name: "Transfer Activity", component: Transfers }])("$name observation status", ({ component }) => {
-  it("labels RPC as a recent sample with gaps, never a completed rotation", async () => {
-    const data = observation();
-    await mount(component, { ...data, coverage: { ...data.coverage, source: "rpc", collectionMode: "bounded-recent-rpc", scanFromBlock: 1000, scannedToBlock: 1063, skippedBlocks: 500 } });
-    const banner = host.querySelector(".scope-banner")?.textContent;
-    expect(banner).toContain("48-block");
-    expect(banner).toContain("500");
-    expect(banner).toContain("mixed historical Blockscout/RPC");
-    expect(banner).not.toContain("prior completed rotations");
-  });
-  it("labels observed token share separately from unverified scan completeness", async () => {
-    const data = observation();
-    await mount(component, { ...data, coverage: { ...data.coverage, observedTokensInWindow: 3, observationExposureVerified: false } });
-    const banner = host.querySelector(".scope-banner")?.textContent;
-    expect(banner).toContain("3 of 10 canonical tokens with observed transfers in this window");
-    expect(banner).toContain("rotation progress is not scan completeness");
-    expect(banner).toContain("Continuous observation exposure is unverified");
-  });
-
-  it("does not relabel all-time counts in old snapshots as window observations", async () => {
-    const data = observation();
-    await mount(component, { ...data, coverage: { ...data.coverage, tokensWithStoredTransfers: 10 } });
-    expect(host.querySelector(".scope-banner")?.textContent).toContain("Unknown of 10 canonical tokens with observed transfers in this window");
-  });
-
-  it("shows 30% CURRENT rotation despite 61 prior completed rotations", async () => {
+  it("omits observation coverage content", async () => {
     await mount(component, observation());
-    expect(host.querySelector(".scope-banner")?.textContent).toContain("30% of current rotation");
-    expect(host.querySelector(".scope-banner")?.textContent).toContain("61 prior completed rotations");
-    expect(host.querySelector<HTMLElement>(".coverage-track > span")?.style.width).toBe("30%");
+    expect(host.querySelector(".scope-banner")).toBeNull();
+    expect(host.textContent).not.toContain("OBSERVATION COVERAGE");
   });
 
   it("does not let new transfers or overall latest time imply the chain is fresh", async () => {

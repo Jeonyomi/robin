@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useObservation } from "@/lib/hooks/use-observation";
-import { CurrentRotation, ObservationFreshness } from "@/components/observation-status";
+import { ObservationFreshness } from "@/components/observation-status";
 import { observationStatus } from "@/lib/observation-status";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
 import type { OverviewData } from "@/lib/queries";
@@ -55,11 +55,6 @@ export default function TransferActivityPage() {
         <div className="metric-block"><p className="metric-label">TOKENS</p><p className="metric-value">{compact(data?.activity.activeTokens)}</p><p className="metric-note">Observed in window</p></div>
         <div className="metric-block"><p className="metric-label">MINT EVENTS</p><p className="metric-value">{compact(data?.activity.mintEvents)}</p><p className="metric-note">From zero address</p></div>
         <div className="metric-block"><p className="metric-label">BURN EVENTS</p><p className="metric-value">{compact(data?.activity.burnEvents)}</p><p className="metric-note">To zero address</p></div>
-      </section>
-
-      <section className="scope-banner compact-scope">
-        <CurrentRotation coverage={data?.coverage} />
-        <p className="scope-note">{data?.dataQuality.note}</p>
       </section>
 
       <section className="panel"><ObservationFreshness data={data} /></section>

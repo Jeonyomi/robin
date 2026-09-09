@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useObservation } from "@/lib/hooks/use-observation";
-import { CurrentRotation, ObservationFreshness } from "@/components/observation-status";
+import { ObservationFreshness } from "@/components/observation-status";
 import { observationStatus } from "@/lib/observation-status";
 import Link from "next/link";
 import { ActivityTimelineChart } from "@/components/charts/activity-timeline";
@@ -120,11 +120,6 @@ export default function DashboardPage() {
               value={data?.gas?.averageGwei != null ? `${gasPrice(data.gas.averageGwei)} Gwei` : "Not observed"}
               note="Standard · per gas unit · See Observation freshness for gas age."
             />
-          </section>
-
-          <section className="scope-banner">
-            <CurrentRotation coverage={data?.coverage} />
-            <p className="scope-note">{data?.dataQuality.note ?? "Waiting for the first transfer-index cycle."}</p>
           </section>
 
           <OverviewResearch />

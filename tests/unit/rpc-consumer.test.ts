@@ -11,11 +11,15 @@ vi.mock("@/lib/api-helpers", () => ({ tryDatabase: async (fn: () => Promise<unkn
 vi.mock("@/lib/queries", () => ({ getSyncStatesData: async () => [{ source: "rpc", jobName: "token-transfers", status: "error", lastSuccessAt: null, lastStartedAt: "2026-01-01T12:00:00Z", lastError: "secret provider error" }] }));
 vi.mock("@/lib/snapshot", () => ({ loadSnapshot: async () => null }));
 vi.mock("@/lib/sources/uniswap-v3/snapshot-store", () => ({ readStoredLpSnapshot: async () => null }));
-it("public source disclosures acknowledge bounded RPC transfers", () => {
+it("keeps bounded RPC disclosure in legal copy while omitting the coverage banner from user pages", () => {
  const html = renderToStaticMarkup(React.createElement(LegalPage));
  expect(html).toContain("RPC transfer collection");
  expect(html).toContain("not continuous indexing");
- expect(readFileSync("src/app/page.tsx", "utf8")).toContain('data?.coverage.collectionMode === "bounded-recent-rpc"');
+ for (const page of ["src/app/page.tsx", "src/app/capital-flow/page.tsx"]) {
+  const source = readFileSync(page, "utf8");
+  expect(source).not.toContain("CurrentRotation");
+  expect(source).not.toContain("scope-banner");
+ }
 });
 it("displays bounded RPC scope instead of rotation completeness", () => {
  const html = renderToStaticMarkup(React.createElement(CurrentRotation, { coverage: { collectionMode: "bounded-recent-rpc", skippedBlocks: 500 } as never }));
