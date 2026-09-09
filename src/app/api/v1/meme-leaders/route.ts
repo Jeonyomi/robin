@@ -2,7 +2,7 @@ import { fetchMemeLeaders } from "@/lib/sources/meme-leaders";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
-const successHeaders = { "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60" };
+const successHeaders = { "Cache-Control": "public, max-age=0, s-maxage=240, stale-while-revalidate=30" };
 const failureHeaders = { "Cache-Control": "no-store, max-age=0" };
 export async function GET(request: Request) {
   if (new URL(request.url).searchParams.size) return Response.json({ data: null, error: "This bounded feed takes no query parameters." }, { status: 400, headers: failureHeaders });

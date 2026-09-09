@@ -14,6 +14,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("DEX/Gecko shared request policy", () => {
+  it("bounds cold-path metadata enrichment to four tokens", async () => {
+    const { MEME_METADATA_ENRICH_LIMIT } = await import("@/lib/sources/meme-leaders");
+    expect(MEME_METADATA_ENRICH_LIMIT).toBe(4);
+  });
   it.each(["leaders", "discovery"])("sanitizes malformed canonical registry for %s", async name => {
     fetcher.mockResolvedValue(Response.json({ assets: "body-secret" }));
     const call = name === "leaders" ? (await import("@/lib/sources/meme-leaders")).fetchMemeLeaders : (await import("@/lib/sources/meme-stock-discovery")).discoverStockPairs;

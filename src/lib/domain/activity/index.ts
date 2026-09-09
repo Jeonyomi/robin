@@ -46,7 +46,7 @@ export function evaluateActivityLensRelease(
   if (input.observationExposureVerified !== true) (boundedRpc ? limitations : reasons).push("Comparable observation exposure is unverified for this window");
   if (input.syncStatus !== "success") (boundedRpc && input.syncStatus === "degraded" ? limitations : reasons).push("Transfer sync is not successful");
   if (input.completedCycles < 1) (boundedRpc ? limitations : reasons).push("Initial registry rotation is incomplete");
-  if (coverage < MIN_STORED_TRANSFER_COVERAGE) reasons.push("Observed-token share in this window is below 95% (not scan completeness)");
+  if (coverage < MIN_STORED_TRANSFER_COVERAGE) (boundedRpc ? limitations : reasons).push("Observed-token share in this window is below 95% (not scan completeness)");
   if (!Number.isFinite(indexedAtMs) || indexAgeMs > MAX_INDEX_AGE_MS || indexAgeMs < -5 * 60 * 1000) {
     reasons.push("Transfer index is stale or has an invalid timestamp");
   }

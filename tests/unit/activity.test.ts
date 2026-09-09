@@ -94,4 +94,18 @@ describe("Activity Lens exposure gate", () => {
     expect(result).toMatchObject({ active: true, status: "active-limited", coveragePct: 100 });
     expect(result.limitations).toContain("Comparable observation exposure is unverified for this window");
   });
+
+  it("does not confuse inactive tokens in a 24h window with bounded scan failure", () => {
+    const result = evaluateActivityLensRelease({
+      ...ready,
+      trackedTokens: 194,
+      tokensWithStoredTransfers: 153,
+      completedCycles: 0,
+      syncStatus: "success",
+      observationExposureVerified: false,
+      collectionMode: "bounded-recent-rpc",
+    }, now);
+    expect(result).toMatchObject({ active: true, status: "active-limited", coveragePct: 79 });
+    expect(result.limitations).toContain("Observed-token share in this window is below 95% (not scan completeness)");
+  });
 });

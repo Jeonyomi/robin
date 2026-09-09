@@ -5,6 +5,7 @@ import type { MemeLeader, MemeLeadersData } from "@/lib/meme-leaders";
 const ROOT = "https://api.geckoterminal.com/api/v2";
 const REGISTRY = "https://api.robinhood.com/rhj/assets";
 const NETWORK = "robinhood";
+export const MEME_METADATA_ENRICH_LIMIT = 4;
 const EXCLUDED = new Set([
   "0x0000000000000000000000000000000000000000",
   "0x0bd7d308f8e1639fab988df18a8011f41eacad73", // WETH
@@ -81,7 +82,9 @@ async function collect(): Promise<MemeLeadersData> {
     });
   }
   const tokens = [...unique.values()];
-  const enrich = tokens.slice(0, 12);
+  // Keep first-load latency bounded: pool metrics are already present in the
+  // trending response, while category/holder metadata is optional enrichment.
+  const enrich = tokens.slice(0, MEME_METADATA_ENRICH_LIMIT);
   let metadataFailed = 0;
   let metadataRequested = 0;
   for (const row of enrich) {
@@ -111,7 +114,7 @@ async function collect(): Promise<MemeLeadersData> {
     tokens, retrievedAt: new Date().toISOString(), registryRetrievedAt,
     source: "GeckoTerminal public Robinhood trending pools and token metadata; Robinhood canonical registry for stock exclusions.",
     ranking: "Provider trending-pool order, deduplicated by base-token contract. Not a Robinwatch score, price-gain ranking or whole-chain token ranking. Metrics use the first observed pool per token, not all token markets.",
-    coverage: "First provider page only: up to 20 pools. Canonical stock base tokens and known native ETH/WETH/USDG addresses excluded. Quote-only tokens and later pages are not enumerated. At most 12 tokens enriched with category/holder metadata. Source-tagged uses explicit meme, Inu, dog/cat/frog-themed or PolitiFi categories; other tokens remain unverified candidates and may be utility or other assets. Retrieval time does not establish provider observation freshness.",
+    coverage: "First provider page only: up to 20 pools. Canonical stock base tokens and known native ETH/WETH/USDG addresses excluded. Quote-only tokens and later pages are not enumerated. At most 4 tokens enriched with category/holder metadata. Source-tagged uses explicit meme, Inu, dog/cat/frog-themed or PolitiFi categories; other tokens remain unverified candidates and may be utility or other assets. Retrieval time does not establish provider observation freshness.",
     poolsObserved: data.data.length, tokensObserved: tokens.length, metadataRequested,
     metadataFailed, partial: true,
   };

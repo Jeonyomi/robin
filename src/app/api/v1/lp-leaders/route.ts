@@ -4,7 +4,7 @@ import { safeLpUnavailable } from "@/lib/sources/uniswap-v3/availability";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 15;
-const successHeaders = { "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60" };
+const successHeaders = { "Cache-Control": "public, max-age=0, s-maxage=240, stale-while-revalidate=30" };
 const failureHeaders = { "Cache-Control": "no-store, max-age=0" };
 export async function GET(request: Request) {
   if ([...new URL(request.url).searchParams].length > 0) {
