@@ -83,20 +83,21 @@ export interface GasPriceData {
   fastGwei: number | null;
   unit: "gwei-per-gas";
   kind: "suggested-gas-price";
-  source: "blockscout-stats";
+  source: "blockscout-stats" | "rpc";
   updatedAt: string | null;
   estimatedTotalFee: false;
 }
 
 export interface ChainStatsData {
   totalBlocks: number;
-  totalTransactions: number;
-  totalAddresses: number;
+  totalTransactions: number | null;
+  totalAddresses: number | null;
   averageBlockTimeMs: number | null;
   networkUtilizationPct: number | null;
   gasPricesGwei: { slow: number | null; average: number | null; fast: number | null } | null;
   gas: GasPriceData | null;
   observedAt: string;
+  source: "blockscout" | "rpc";
 }
 
 export interface OverviewData {
@@ -209,7 +210,7 @@ function parseGasPrice(value: unknown): GasPriceData | null {
     fastGwei: valid(fastGwei),
     unit: "gwei-per-gas",
     kind: "suggested-gas-price",
-    source: "blockscout-stats",
+    source: row.source === "rpc" ? "rpc" : "blockscout-stats",
     updatedAt,
     estimatedTotalFee: false,
   };
@@ -219,9 +220,9 @@ function parseChainStats(value: unknown): ChainStatsData | null {
   const row = objectValue(value);
   if (!row) return null;
   const totalBlocks = numberValue(row.totalBlocks, Number.NaN);
-  const totalTransactions = numberValue(row.totalTransactions, Number.NaN);
-  const totalAddresses = numberValue(row.totalAddresses, Number.NaN);
-  if (![totalBlocks, totalTransactions, totalAddresses].every(Number.isFinite)) return null;
+  const totalTransactions = row.totalTransactions == null ? null : numberValue(row.totalTransactions, Number.NaN);
+  const totalAddresses = row.totalAddresses == null ? null : numberValue(row.totalAddresses, Number.NaN);
+  if (!Number.isFinite(totalBlocks) || (totalTransactions !== null && !Number.isFinite(totalTransactions)) || (totalAddresses !== null && !Number.isFinite(totalAddresses))) return null;
   const gas = parseGasPrice(row);
   return {
     totalBlocks,
@@ -236,6 +237,7 @@ function parseChainStats(value: unknown): ChainStatsData | null {
     } : null,
     gas,
     observedAt: typeof row.observedAt === "string" ? row.observedAt : new Date(0).toISOString(),
+    source: row.source === "rpc" ? "rpc" : "blockscout",
   };
 }
 
@@ -787,6 +789,7 @@ export interface SyncStateRow {
   lastError: string | null;
   lastStartedAt?: string | null;
   status?: string | null;
+  cursor?: unknown;
 }
 
 export async function getSyncStatesData(db: Db): Promise<SyncStateRow[]> {
@@ -798,5 +801,6 @@ export async function getSyncStatesData(db: Db): Promise<SyncStateRow[]> {
     lastError: r.lastError,
     lastStartedAt: toIso(r.lastStartedAt),
     status: r.status,
+    cursor: r.cursor,
   }));
 }

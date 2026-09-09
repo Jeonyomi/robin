@@ -149,7 +149,7 @@ export default function DashboardPage() {
                 </div>
                 <span className="method-chip">Suggested · not total fee</span>
               </div>
-              <div className="gas-tier-grid" aria-label="Blockscout suggested gas prices">
+              <div className="gas-tier-grid" aria-label="Suggested gas prices">
                 {([
                   ["Slow", data?.gas?.slowGwei],
                   ["Standard", data?.gas?.averageGwei],
@@ -163,10 +163,10 @@ export default function DashboardPage() {
                 ))}
               </div>
               <p className="gas-note">
-                Blockscout suggested price per gas unit. See Observation freshness for gas age. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
+                {data?.gas?.source === "rpc" ? "Live RPC standard gas price; slow and fast tiers are unavailable." : "Blockscout suggested price per gas unit."} See Observation freshness for gas age. Actual transaction fee depends on gas used and effective gas price; no USD estimate is implied.
               </p>
               <dl className="chain-list">
-                <div><dt>Indexed block count</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
+                <div><dt>{data?.chain?.source === "rpc" ? "Latest chain block" : "Indexed block count"}</dt><dd>{compact(data?.chain?.totalBlocks)}</dd></div>
                 <div><dt>Total addresses</dt><dd>{compact(data?.chain?.totalAddresses)}</dd></div>
                 <div><dt>Average block time</dt><dd>{data?.chain?.averageBlockTimeMs != null ? `${data.chain.averageBlockTimeMs.toFixed(0)} ms` : "Not observed"}</dd></div>
                 <div><dt>Latest tracked block</dt><dd>{data?.activity.latestBlock?.toLocaleString() ?? "Not observed"}</dd></div>

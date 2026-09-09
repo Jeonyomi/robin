@@ -57,6 +57,12 @@ export async function GET() {
     const robinhoodState = findState("robinhood", "canonical-assets");
     const blockscoutStatsState = findState("blockscout", "chain-stats");
     const gasState = findState("blockscout", "gas-prices");
+    const chainUsesRpc = blockscoutStatsState?.cursor !== null
+      && typeof blockscoutStatsState?.cursor === "object"
+      && (blockscoutStatsState.cursor as Record<string, unknown>).source === "rpc";
+    const gasUsesRpc = gasState?.cursor !== null
+      && typeof gasState?.cursor === "object"
+      && (gasState.cursor as Record<string, unknown>).source === "rpc";
     const rpcTransferState = findState("rpc", "token-transfers");
     const transferState = findState("blockscout", "token-transfers");
     const databaseStatus = database.ok ? "healthy" : syncStates.length > 0 ? "degraded" : "unavailable";
@@ -89,13 +95,13 @@ export async function GET() {
         ...storedHealth(robinhoodState, now),
       },
       {
-        name: "Blockscout Chain Stats",
-        url: "https://robinhoodchain.blockscout.com/api/v2/stats",
+        name: chainUsesRpc ? "RPC Chain State" : "Blockscout Chain Stats",
+        url: chainUsesRpc ? "Configured chain RPC (chain 4663)" : "https://robinhoodchain.blockscout.com/api/v2/stats",
         ...storedHealth(blockscoutStatsState, now),
       },
       {
-        name: "Blockscout Gas Price",
-        url: "https://robinhoodchain.blockscout.com/api/v2/stats",
+        name: gasUsesRpc ? "RPC Gas Price" : "Blockscout Gas Price",
+        url: gasUsesRpc ? "Configured chain RPC (chain 4663)" : "https://robinhoodchain.blockscout.com/api/v2/stats",
         ...storedHealth(gasState, now, 1),
       },
       {

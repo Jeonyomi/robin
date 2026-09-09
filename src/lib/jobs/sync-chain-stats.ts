@@ -2,6 +2,32 @@ import { and, eq } from "drizzle-orm";
 import { sourceSyncState } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { fetchChainStats } from "@/lib/sources/blockscout/stats";
+import { fetchRpcChainSnapshot } from "@/lib/sources/rpc-chain";
+
+async function fetchChainObservation() {
+  try {
+    return { ...(await fetchChainStats()), source: "blockscout" as const };
+  } catch (blockscoutError) {
+    let rpc;
+    try {
+      rpc = await fetchRpcChainSnapshot();
+    } catch {
+      throw blockscoutError;
+    }
+    return {
+      totalBlocks: rpc.latestBlock,
+      totalTransactions: null,
+      totalAddresses: null,
+      averageBlockTimeMs: null,
+      networkUtilizationPct: null,
+      gasUsedToday: null,
+      gasPricesGwei: rpc.gasPricesGwei,
+      gasPriceUpdatedAt: rpc.observedAt,
+      observedAt: rpc.observedAt,
+      source: rpc.source,
+    };
+  }
+}
 
 function previousBlockCount(value: unknown): number | null {
   if (!value || typeof value !== "object") return null;
@@ -38,7 +64,7 @@ export async function syncChainStats() {
 
   try {
     const existingRows = await db.select({ cursor: sourceSyncState.cursor }).from(sourceSyncState).where(statsKey).limit(1);
-    const stats = await fetchChainStats();
+    const stats = await fetchChainObservation();
     const gasValues = stats.gasPricesGwei
       ? [stats.gasPricesGwei.slow, stats.gasPricesGwei.average, stats.gasPricesGwei.fast]
       : [];
@@ -50,6 +76,7 @@ export async function syncChainStats() {
           gasPricesGwei: stats.gasPricesGwei,
           gasPriceUpdatedAt: stats.gasPriceUpdatedAt,
           observedAt: stats.observedAt,
+          source: stats.source,
         },
         lastSuccessAt: new Date(),
         recordsProcessed: 1,

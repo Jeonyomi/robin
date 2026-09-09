@@ -5,6 +5,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { sourceSyncState, tokenTransfers } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { syncChainStats } from "@/lib/jobs/sync-chain-stats";
+import { fetchRpcChainSnapshot } from "@/lib/sources/rpc-chain";
 import { createSourceRequester, SourceRequestError } from "@/lib/sources/source-request";
 
 // Each DB-state scenario gets an isolated real request policy and virtual policy
@@ -17,6 +18,7 @@ vi.mock("@/lib/sources/source-request", async (importOriginal) => {
 });
 
 vi.mock("@/lib/db", () => ({ getDb: vi.fn() }));
+vi.mock("@/lib/sources/rpc-chain", () => ({ fetchRpcChainSnapshot: vi.fn() }));
 vi.mock("@/lib/config", () => ({
   getAPIs: () => ({ blockscout: { baseUrl: "https://blockscout.invalid/api/v2" } }),
 }));
@@ -96,6 +98,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(fetchRpcChainSnapshot).mockRejectedValue(new Error("rpc fallback unavailable"));
   let policyNow = now.getTime();
   request = createSourceRequester({ now: () => policyNow, wait: async (ms) => { policyNow += ms; }, random: () => 0 });
 });
@@ -105,6 +108,28 @@ afterEach(() => {
 });
 
 describe("syncChainStats same-source regression guard", () => {
+  it("stores a fresh RPC block and gas observation when Blockscout is blocked", async () => {
+    const db = fakeDatabase();
+    fetchMock.mockRejectedValue(new Error("blockscout blocked"));
+    vi.mocked(fetchRpcChainSnapshot).mockResolvedValue({
+      latestBlock: 58244282,
+      gasPricesGwei: { slow: null, average: 0.014152608, fast: null },
+      source: "rpc",
+      observedAt: now.toISOString(),
+    });
+
+    await expect(syncChainStats()).resolves.toMatchObject({ totalBlocks: 58244282, source: "rpc" });
+    expect(db.rows.get("blockscout:chain-stats")).toMatchObject({
+      cursor: { totalBlocks: 58244282, totalTransactions: null, totalAddresses: null, source: "rpc" },
+      lastSuccessAt: now,
+      status: "success",
+    });
+    expect(db.rows.get("blockscout:gas-prices")).toMatchObject({
+      cursor: { gasPricesGwei: { slow: null, average: 0.014152608, fast: null }, source: "rpc" },
+      lastSuccessAt: now,
+      status: "success",
+    });
+  });
   it("stores new aggregate progress even when the transfer sample is ahead", async () => {
     const db = fakeDatabase();
     respond();
