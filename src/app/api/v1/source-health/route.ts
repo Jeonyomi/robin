@@ -32,6 +32,20 @@ function storedHealth(state: SyncStateRow | undefined, now: number, maxAgeHours 
   };
 }
 
+function chainStatsHealth(state: SyncStateRow | undefined, now: number) {
+  const health = storedHealth(state, now);
+  const rejectedRegression = state?.lastError?.startsWith("Ignored regressing Blockscout stats response:") ?? false;
+  const acceptedIsFresh = health.lastSuccessAt !== null
+    && now - Date.parse(health.lastSuccessAt) <= 3 * 60 * 60 * 1000;
+  if (!rejectedRegression || !acceptedIsFresh) return { ...health, warning: null };
+  return {
+    ...health,
+    status: "healthy",
+    lastError: null,
+    warning: "Latest collector attempt was rejected because the provider aggregate regressed.",
+  };
+}
+
 export async function GET() {
   try {
     // Read persisted collector outcomes only. Public requests must not fan out
@@ -102,7 +116,7 @@ export async function GET() {
         name: chainUsesRpc ? "RPC Chain State" : "Blockscout Chain Stats",
         role: "active" as const,
         url: chainUsesRpc ? "Configured chain RPC (chain 4663)" : "https://robinhoodchain.blockscout.com/api/v2/stats",
-        ...storedHealth(blockscoutStatsState, now),
+        ...chainStatsHealth(blockscoutStatsState, now),
       },
       {
         name: gasUsesRpc ? "RPC Gas Price" : "Blockscout Gas Price",

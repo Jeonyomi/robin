@@ -10,10 +10,10 @@ if (Test-Path $launcher) {
   if ((Get-FileHash $source).Hash -ne (Get-FileHash $launcher).Hash) { throw 'An unrelated/different LP launcher already exists.' }
 } else { Copy-Item -LiteralPath $source -Destination $launcher }
 $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 2)
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Dedicated Robin LP snapshot publisher. No changes to RobinSync. Requires this user session and WSL.'
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Dedicated Robin LP snapshot publisher every five minutes. No changes to RobinSync. Requires this user session and WSL.'
 $task.Settings.Enabled = $false
 Register-ScheduledTask -TaskName $name -InputObject $task | Out-Null
 Export-ScheduledTask -TaskName $name | Set-Content -Encoding utf8 (Join-Path $directory 'task-disabled.xml')

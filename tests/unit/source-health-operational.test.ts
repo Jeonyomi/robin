@@ -13,7 +13,7 @@ vi.mock("@/lib/api-helpers", () => ({
 vi.mock("@/lib/queries", () => ({
   getSyncStatesData: async () => [
     success("robinhood", "canonical-assets", "2026-09-08T11:00:00.000Z"),
-    success("blockscout", "chain-stats", "2026-09-09T11:59:00.000Z"),
+    { ...success("blockscout", "chain-stats", "2026-09-09T11:59:00.000Z"), status: "degraded", lastError: "Ignored regressing Blockscout stats response: 99 < 100" },
     success("blockscout", "gas-prices", "2026-09-09T11:59:00.000Z"),
     { ...success("blockscout", "token-transfers", "2026-09-01T00:00:00.000Z"), status: "error", lastError: "legacy failure" },
     success("rpc", "token-transfers", "2026-09-09T11:59:00.000Z"),
@@ -45,6 +45,16 @@ it("aligns canonical health with daily maintenance cadence", async () => {
   expect(body.data.sources).toContainEqual(expect.objectContaining({
     name: "Robinhood Assets API", role: "active", status: "healthy",
   }));
+});
+
+it("keeps fresh accepted chain stats operational when a lower provider sample is rejected", async () => {
+  const { GET } = await import("../../src/app/api/v1/source-health/route");
+  const body = await (await GET()).json();
+  expect(body.data.sources).toContainEqual(expect.objectContaining({
+    name: "Blockscout Chain Stats", role: "active", status: "healthy",
+    warning: "Latest collector attempt was rejected because the provider aggregate regressed.",
+  }));
+  expect(body.data.overallStatus).toBe("healthy");
 });
 
 it("keeps the retired Blockscout transfer path visible without degrading active operations", async () => {

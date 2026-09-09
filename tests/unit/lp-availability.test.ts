@@ -11,6 +11,9 @@ function board(now: number): LpLeaderboard {
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("snapshot service budgets and failure cooldown", () => {
+  it("keeps source observations usable across one missed five-minute refresh", () => {
+    expect(LP_LEADER_FRESH_MS).toBe(10 * 60_000);
+  });
   it("coalesces concurrent requests and cache hits do not renew the source timestamp", async () => {
     let now = 1_000_000; const data = board(now);
     const collect = vi.fn(async () => data); const read = createLpSnapshotService(collect, () => now);
