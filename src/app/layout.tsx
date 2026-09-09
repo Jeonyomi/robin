@@ -38,7 +38,7 @@ const navItems = [
   { href: "/stock-tokens", marker: "02", label: "Asset Registry", description: "Canonical contracts" },
   { href: "/capital-flow", marker: "03", label: "Transfers", description: "Raw onchain evidence" },
   { href: "/opportunities", marker: "04", label: "Activity Lens", description: "Observed activity ranking" },
-  { href: "/liquidity", marker: "05", label: "LP Leaders", description: "NFT fees and range research" },
+  { href: "/liquidity", marker: "05", label: "Meme & Stock Pairs", description: "Pair discovery and pool research" },
   { href: "/meme-leaders", marker: "06", label: "Meme Leaders", description: "Trending tokens and market activity" },
 ];
 

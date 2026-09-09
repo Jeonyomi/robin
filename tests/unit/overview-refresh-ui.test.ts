@@ -38,7 +38,7 @@ it("offers refresh without changing the selected observation window", async () =
 });
 it("retains evidence with an explicit warning when a refresh fails", async () => {
   state({ error: true }); await render();
-  expect(host.textContent).toContain("OBSERVED_SAMPLE");
+  expect(host.textContent).toContain("TRANSFER EVENTS");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Refresh failed");
   expect(host.textContent).toContain("Previously loaded data is still shown");
 });
@@ -54,11 +54,11 @@ it("disables refresh while pending without hiding previous evidence", async () =
   state({ loading: true }); await render();
   const button = host.querySelector<HTMLButtonElement>(".overview-refresh-button");
   expect(button?.disabled).toBe(true);
-  expect(host.textContent).toContain("OBSERVED_SAMPLE");
+  expect(host.textContent).toContain("TRANSFER EVENTS");
 });
 it("keeps research summaries and exact workspace links available during an Overview outage", async () => {
   state({ data: null, error: true, receivedAt: null }); await render();
-  for (const href of ["/liquidity#stock-pairs", "/liquidity#lp-leaders", "/meme-leaders"]) {
+  for (const href of ["/liquidity", "/meme-leaders"]) {
     expect(host.querySelector(`a[href="${href}"]`), href).not.toBeNull();
   }
   expect(host.textContent).toContain("Explore liquidity & meme activity");

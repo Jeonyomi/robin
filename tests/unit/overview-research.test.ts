@@ -15,17 +15,17 @@ function renderOverview() {
 }
 
 describe("Overview research workspaces", () => {
-  it("offers three bounded research destinations without live data or prefetch", () => {
+  it("offers the two active bounded research destinations without live data or prefetch", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     try {
       const document = renderOverview();
       const cards = Array.from(document.querySelectorAll("article"));
-      expect(cards).toHaveLength(3);
+      expect(cards).toHaveLength(2);
       expect(cards.map((card) => card.querySelector("h3")?.textContent)).toEqual([
-        "Meme / Stock Pairs", "LP Leaders", "Meme Leaders",
+        "Meme & Stock Pairs", "Meme Leaders",
       ]);
       expect(cards.map((card) => card.querySelector("a")?.getAttribute("href"))).toEqual([
-        "/liquidity#stock-pairs", "/liquidity#lp-leaders", "/meme-leaders",
+        "/liquidity", "/meme-leaders",
       ]);
       for (const card of cards) {
         expect(card.querySelector("a")?.textContent?.trim()).toBeTruthy();
@@ -36,11 +36,7 @@ describe("Overview research workspaces", () => {
       expect(pair).toContain("related LP positions");
       expect(pair).toContain("up to 8 NFTs");
       expect(pair).toContain("empty sample does not prove a pool has no LP positions");
-      const lp = cards[1].textContent ?? "";
-      expect(lp).toContain("lifetime recorded WETH fee entitlement");
-      expect(lp).toContain("bounded sample of observed positions");
-      expect(lp).toContain("not a chain-wide leaderboard or realized profit");
-      const meme = cards[2].textContent ?? "";
+      const meme = cards[1].textContent ?? "";
       expect(meme).toContain("provider trending order");
       expect(meme).toContain("first page, up to 20 pools");
       expect(meme).toContain("deduplicated by base-token contract");
@@ -58,7 +54,7 @@ describe("Overview research workspaces", () => {
       }
       visit(OverviewResearch());
       expect(links.map((link) => [link.props.href, link.props.prefetch])).toEqual([
-        ["/liquidity#stock-pairs", false], ["/liquidity#lp-leaders", false], ["/meme-leaders", false],
+        ["/liquidity", false], ["/meme-leaders", false],
       ]);
       expect(document.querySelectorAll("time, [role='status'], [aria-live], .metric-value")).toHaveLength(0);
       const text = document.body.textContent ?? "";
@@ -76,6 +72,6 @@ describe("Overview research workspaces", () => {
     expect(document.querySelector("section")?.getAttribute("aria-labelledby")).toBe(heading?.id);
     expect(document.body.textContent).toContain("RESEARCH WORKSPACES");
     expect(document.body.textContent).toContain("Product capabilities, not a live market snapshot.");
-    expect(document.body.textContent).toContain("Pair discovery → pool evidence → LP position review");
+    expect(document.body.textContent).toContain("Pair discovery → pool evidence → related position review");
   });
 });
