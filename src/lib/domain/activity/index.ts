@@ -11,6 +11,7 @@ export type ActivityLensReleaseInput = {
   observationExposureVerified?: boolean | null;
   lastIndexedAt: string | null;
   rankedTokens: number;
+  collectionMode?: string;
 };
 
 export type ActivityLensRelease = {
@@ -18,6 +19,7 @@ export type ActivityLensRelease = {
   status: "active-limited" | "withheld";
   coveragePct: number;
   reasons: string[];
+  limitations: string[];
 };
 
 const MIN_STORED_TRANSFER_COVERAGE = 0.95;
@@ -38,10 +40,12 @@ export function evaluateActivityLensRelease(
   const indexedAtMs = input.lastIndexedAt ? Date.parse(input.lastIndexedAt) : Number.NaN;
   const indexAgeMs = nowMs - indexedAtMs;
   const reasons: string[] = [];
+  const limitations: string[] = [];
+  const boundedRpc = input.collectionMode === "bounded-recent-rpc";
 
-  if (input.observationExposureVerified !== true) reasons.push("Comparable observation exposure is unverified for this window");
-  if (input.syncStatus !== "success") reasons.push("Transfer sync is not successful");
-  if (input.completedCycles < 1) reasons.push("Initial registry rotation is incomplete");
+  if (input.observationExposureVerified !== true) (boundedRpc ? limitations : reasons).push("Comparable observation exposure is unverified for this window");
+  if (input.syncStatus !== "success") (boundedRpc && input.syncStatus === "degraded" ? limitations : reasons).push("Transfer sync is not successful");
+  if (input.completedCycles < 1) (boundedRpc ? limitations : reasons).push("Initial registry rotation is incomplete");
   if (coverage < MIN_STORED_TRANSFER_COVERAGE) reasons.push("Observed-token share in this window is below 95% (not scan completeness)");
   if (!Number.isFinite(indexedAtMs) || indexAgeMs > MAX_INDEX_AGE_MS || indexAgeMs < -5 * 60 * 1000) {
     reasons.push("Transfer index is stale or has an invalid timestamp");
@@ -53,6 +57,7 @@ export function evaluateActivityLensRelease(
     status: reasons.length === 0 ? "active-limited" : "withheld",
     coveragePct,
     reasons,
+    limitations,
   };
 }
 

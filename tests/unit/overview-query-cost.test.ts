@@ -28,7 +28,7 @@ function fakeDatabase(extraStates: unknown[][] = []) {
     calls.push({ sql, params, arrayMode: options.arrayMode });
     if (sql.includes("WITH counts AS")) return { rows: leaderRows };
     if (sql.includes("WITH bucket_counts AS")) return { rows: [{ bucket: timestamp, transfers: "30", active_addresses: "12", mints: "1", burns: "2" }] };
-    if (sql.includes("AS transfer_count")) return { rows: [{ transfer_count: "30", active_tokens: "2", active_addresses: "12", mint_events: "1", burn_events: "2", latest_block: "100", last_observed_at: timestamp }] };
+    if (sql.includes("AS transfer_count")) return { rows: [{ transfer_count: "30", observed_transactions: "7", active_tokens: "2", active_addresses: "12", mint_events: "1", burn_events: "2", latest_block: "100", last_observed_at: timestamp }] };
     if (sql.includes('from "source_sync_state"')) return { rows: [
       ["token-transfers", { scannedInCycle: 2, completedCycles: 1, lastBatchSize: 2, lookbackHours: 48 }, timestamp, "success", "blockscout"],
       ["chain-stats", { totalBlocks: 100, totalTransactions: 200, totalAddresses: 50, observedAt: timestamp, gasPricesGwei: { slow: 1, average: 2, fast: 3 } }, timestamp, "success", "blockscout"],
@@ -90,6 +90,8 @@ describe("overview ranking query cost", () => {
     expect(data.dataQuality.completeness).toBe("partial");
     expect(data.dataQuality.note).toContain("not scan completeness");
     expect(data.activity.transferEvents).toBe(30);
+    expect(data.activity.observedTransactions).toBe(7);
+    expect(calls.find((call) => call.sql.includes("AS transfer_count"))?.sql).toContain("count(DISTINCT");
   });
 
   it.each(["1h", "6h", "24h"])("%s opt-out removes only ranking SQL and preserves nonranking output", async (window) => {

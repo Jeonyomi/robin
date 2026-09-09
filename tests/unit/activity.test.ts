@@ -82,4 +82,16 @@ describe("Activity Lens exposure gate", () => {
     expect(result.active).toBe(false);
     expect(result.reasons).toContain("Transfer sync is not successful");
   });
+
+  it("opens a clearly limited lens for a fresh bounded RPC sample with broad observed-token coverage", () => {
+    const result = evaluateActivityLensRelease({
+      ...ready,
+      completedCycles: 0,
+      syncStatus: "degraded",
+      observationExposureVerified: false,
+      collectionMode: "bounded-recent-rpc",
+    }, now);
+    expect(result).toMatchObject({ active: true, status: "active-limited", coveragePct: 100 });
+    expect(result.limitations).toContain("Comparable observation exposure is unverified for this window");
+  });
 });

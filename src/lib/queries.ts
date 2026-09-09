@@ -106,6 +106,7 @@ export interface OverviewData {
   gas: GasPriceData | null;
   activity: {
     transferEvents: number;
+    observedTransactions: number;
     activeAddresses: number;
     activeTokens: number;
     mintEvents: number;
@@ -150,6 +151,7 @@ export interface OverviewData {
 
 type AggregateRow = {
   transfer_count: number | string;
+  observed_transactions: number | string;
   active_tokens: number | string;
   active_addresses: number | string;
   mint_events: number | string;
@@ -267,6 +269,7 @@ export async function getOverviewData(
     db.execute<AggregateRow>(sql`
       SELECT
         count(*)::int AS transfer_count,
+        count(DISTINCT tx_hash)::int AS observed_transactions,
         count(DISTINCT token_address)::int AS active_tokens,
         (SELECT count(DISTINCT address)::int FROM (
           SELECT from_address AS address FROM token_transfers WHERE timestamp >= ${windowStart}
@@ -435,6 +438,7 @@ export async function getOverviewData(
     gas,
     activity: {
       transferEvents: numberValue(aggregate?.transfer_count),
+      observedTransactions: numberValue(aggregate?.observed_transactions),
       activeAddresses: numberValue(aggregate?.active_addresses),
       activeTokens: numberValue(aggregate?.active_tokens),
       mintEvents: numberValue(aggregate?.mint_events),
@@ -488,7 +492,7 @@ export async function getOverviewData(
       completeness: "partial",
       syntheticExcluded: true,
       note: rpcCursor?.collectionMode === "bounded-recent-rpc"
-        ? "RPC scans cover at most 48 recent blocks per pulse, not the full interval. Gaps are not backfilled; pre-bootstrap coverage is unknown. Historical counts mix Blockscout and RPC observations. Observed-token share is not scan completeness. Continuous observation exposure remains unverified and Activity Lens rankings are withheld."
+        ? "RPC scans cover at most 48 recent blocks per pulse, not the full interval. Gaps are not backfilled; pre-bootstrap coverage is unknown. Historical counts mix Blockscout and RPC observations. Observed-token share is not scan completeness. Activity Lens is a limited ranking of stored observations only; comparative exposure remains unverified."
         : "Counts are page-bounded observations and may be lower bounds. Observed-token counts use the current canonical registry and selected window; they are not scan completeness. Continuous observation exposure is unverified, so comparative Activity Lens rankings are withheld.",
     },
     lastUpdatedAt,

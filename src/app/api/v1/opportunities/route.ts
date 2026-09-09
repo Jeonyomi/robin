@@ -25,6 +25,7 @@ function activityLensResponse(
     observationExposureVerified: data.coverage.observationExposureVerified,
     lastIndexedAt: data.coverage.lastIndexedAt,
     rankedTokens: data.topTokens.length,
+    collectionMode: data.coverage.collectionMode,
   });
 
   return NextResponse.json({
