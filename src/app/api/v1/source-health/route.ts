@@ -46,6 +46,30 @@ function chainStatsHealth(state: SyncStateRow | undefined, now: number) {
   };
 }
 
+function rpcTransferHealth(state: SyncStateRow | undefined, now: number) {
+  const health = storedHealth(state, now);
+  const cursor = state?.cursor && typeof state.cursor === "object"
+    ? state.cursor as Record<string, unknown>
+    : {};
+  const coverage = {
+    collectionMode: typeof cursor.collectionMode === "string" ? cursor.collectionMode : null,
+    totalTokens: typeof cursor.totalTokens === "number" ? cursor.totalTokens : null,
+    eligibleTokens: typeof cursor.eligibleTokens === "number" ? cursor.eligibleTokens : null,
+    skippedTokens: typeof cursor.skippedTokens === "number" ? cursor.skippedTokens : null,
+  };
+  const transientPartial = state?.lastError === "HTTP_429";
+  const acceptedIsFresh = health.lastSuccessAt !== null
+    && now - Date.parse(health.lastSuccessAt) <= 3 * 60 * 60 * 1000;
+  if (!transientPartial || !acceptedIsFresh) return { ...health, warning: null, coverage };
+  return {
+    ...health,
+    status: "healthy",
+    lastError: null,
+    warning: "Latest RPC transfer collection was partial (rate-limit).",
+    coverage,
+  };
+}
+
 export async function GET() {
   try {
     // Read persisted collector outcomes only. Public requests must not fan out
@@ -134,7 +158,7 @@ export async function GET() {
         name: "RPC Token Transfers",
         role: "active" as const,
         url: "Configured chain RPC (chain 4663)",
-        ...storedHealth(rpcTransferState, now),
+        ...rpcTransferHealth(rpcTransferState, now),
       },
       {
         name: "Database",

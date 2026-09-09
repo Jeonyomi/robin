@@ -16,7 +16,7 @@ vi.mock("@/lib/queries", () => ({
     { ...success("blockscout", "chain-stats", "2026-09-09T11:59:00.000Z"), status: "degraded", lastError: "Ignored regressing Blockscout stats response: 99 < 100" },
     success("blockscout", "gas-prices", "2026-09-09T11:59:00.000Z"),
     { ...success("blockscout", "token-transfers", "2026-09-01T00:00:00.000Z"), status: "error", lastError: "legacy failure" },
-    success("rpc", "token-transfers", "2026-09-09T11:59:00.000Z"),
+    { ...success("rpc", "token-transfers", "2026-09-09T11:59:00.000Z"), status: "degraded", lastError: "HTTP_429", cursor: { totalTokens: 194, eligibleTokens: 194, skippedTokens: 0 } },
   ],
 }));
 vi.mock("@/lib/snapshot", () => ({ loadSnapshot: async () => null }));
@@ -53,6 +53,17 @@ it("keeps fresh accepted chain stats operational when a lower provider sample is
   expect(body.data.sources).toContainEqual(expect.objectContaining({
     name: "Blockscout Chain Stats", role: "active", status: "healthy",
     warning: "Latest collector attempt was rejected because the provider aggregate regressed.",
+  }));
+  expect(body.data.overallStatus).toBe("healthy");
+});
+
+it("reports a partial fresh RPC transfer attempt as coverage warning rather than an outage", async () => {
+  const { GET } = await import("../../src/app/api/v1/source-health/route");
+  const body = await (await GET()).json();
+  expect(body.data.sources).toContainEqual(expect.objectContaining({
+    name: "RPC Token Transfers", role: "active", status: "healthy",
+    warning: "Latest RPC transfer collection was partial (rate-limit).",
+    coverage: expect.objectContaining({ totalTokens: 194, eligibleTokens: 194, skippedTokens: 0 }),
   }));
   expect(body.data.overallStatus).toBe("healthy");
 });
