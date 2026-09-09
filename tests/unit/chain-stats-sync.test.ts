@@ -130,6 +130,19 @@ describe("syncChainStats same-source regression guard", () => {
       status: "success",
     });
   });
+  it("accepts Blockscout aggregate stats after a newer RPC head observation", async () => {
+    const db = fakeDatabase({
+      cursor: { ...oldStats, totalBlocks: 200, totalTransactions: null, totalAddresses: null, source: "rpc" },
+      lastSuccessAt: oldTime,
+    });
+    respond(110);
+
+    const result = await syncChainStats();
+
+    expect(result).toMatchObject({ totalBlocks: 110, totalTransactions: 250, totalAddresses: 60, source: "blockscout" });
+    expect(db.rows.get("blockscout:chain-stats")).toMatchObject({ cursor: result, lastSuccessAt: now, status: "success" });
+  });
+
   it("stores new aggregate progress even when the transfer sample is ahead", async () => {
     const db = fakeDatabase();
     respond();

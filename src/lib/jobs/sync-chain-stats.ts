@@ -31,7 +31,9 @@ async function fetchChainObservation() {
 
 function previousBlockCount(value: unknown): number | null {
   if (!value || typeof value !== "object") return null;
-  const candidate = Number((value as Record<string, unknown>).totalBlocks);
+  const observation = value as Record<string, unknown>;
+  if (observation.source === "rpc") return null;
+  const candidate = Number(observation.totalBlocks);
   return Number.isFinite(candidate) ? candidate : null;
 }
 
