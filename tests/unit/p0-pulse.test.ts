@@ -24,11 +24,11 @@ describe("activity pulse stage isolation", () => {
   it("returns success only when every stage succeeds", async () => {
     expect((await runActivityPulse(async () => 0)).exitCode).toBe(0);
   });
-  it("continues stats and snapshot after transfer failure and retains a failure exit", async () => {
-    const execute = vi.fn().mockResolvedValueOnce(1).mockResolvedValue(0);
+  it("runs low-volume chain stats before transfer scanning and continues after failure", async () => {
+    const execute = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1).mockResolvedValue(0);
     const result = await runActivityPulse(execute);
-    expect(execute.mock.calls.map(([stage]) => stage)).toEqual(["transfers", "stats", "snapshot"]);
+    expect(execute.mock.calls.map(([stage]) => stage)).toEqual(["stats", "transfers", "snapshot"]);
     expect(result.exitCode).toBe(1);
-    expect(result.stages).toEqual([{ stage: "transfers", exitCode: 1 }, { stage: "stats", exitCode: 0 }, { stage: "snapshot", exitCode: 0 }]);
+    expect(result.stages).toEqual([{ stage: "stats", exitCode: 0 }, { stage: "transfers", exitCode: 1 }, { stage: "snapshot", exitCode: 0 }]);
   });
 });

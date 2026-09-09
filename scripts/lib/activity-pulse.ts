@@ -3,7 +3,7 @@ export type PulseStage = "transfers" | "stats" | "snapshot";
 /** Independent attempts: a successful publication never masks source failure. */
 export async function runActivityPulse(execute: (stage: PulseStage) => Promise<number>) {
   const stages: { stage: PulseStage; exitCode: number }[] = [];
-  for (const stage of ["transfers", "stats", "snapshot"] as const) {
+  for (const stage of ["stats", "transfers", "snapshot"] as const) {
     let exitCode = 1;
     try {
       const code = await execute(stage);
