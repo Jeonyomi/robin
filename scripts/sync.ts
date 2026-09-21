@@ -124,15 +124,6 @@ async function main() {
       await run(j);
     }
 
-    // Publish the local snapshot to Vercel Blob so the deployed UI shows data.
-    // Only in "all" mode (scheduled) — watch mode re-runs every 5 min and would
-    // burn Blob upload bandwidth. Skipped when BLOB_READ_WRITE_TOKEN is unset.
-    // Partial data and persisted source failures must still reach the dashboard.
-    // A successful publication never clears an earlier nonzero exit code.
-    if (job === "all" && process.env.BLOB_READ_WRITE_TOKEN) {
-      await run("snapshot");
-    }
-
     if (job === "watch") {
       console.log("\n⏱ Watching — re-running every 5 minutes. Ctrl+C to stop.");
       setInterval(async () => {

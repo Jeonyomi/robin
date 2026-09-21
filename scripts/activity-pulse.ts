@@ -3,9 +3,7 @@ import { runActivityPulse } from "./lib/activity-pulse";
 
 // Fixed executable/arguments, no shell. Each child shares the persisted source budget.
 void runActivityPulse((stage) => new Promise<number>((resolve) => {
-  const args = stage === "snapshot"
-    ? ["--import", "tsx", "scripts/publish-snapshot.ts"]
-    : ["--import", "tsx", "scripts/sync.ts", stage];
+  const args = ["--import", "tsx", "scripts/sync.ts", stage];
   console.log("PULSE_STAGE_START", JSON.stringify({ stage, startedAt: new Date().toISOString() }));
   const child = spawn(process.execPath, args, {
     cwd: process.cwd(), stdio: "inherit", shell: false,

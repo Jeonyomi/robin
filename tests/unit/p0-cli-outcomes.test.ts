@@ -67,43 +67,38 @@ describe("real sync CLI resolved source outcomes (offline I/O boundaries)", () =
     expect(await dispatch("snapshot")).toBe(1);
     expect(jobs.snapshot).toHaveBeenCalledOnce();
   });
-  it("pulse runs real CLI stages after partial persistence and retains aggregate failure", async () => {
+  it("pulse runs only database-backed collector stages and retains aggregate failure", async () => {
     const persisted: string[] = [];
     jobs.transfers.mockImplementation(async () => {
       persisted.push("successful-token");
       return { tokensSucceeded: 1, tokensFailed: 1, tokensSkipped: 0 };
     });
-    jobs.snapshot.mockImplementation(async () => {
-      expect(persisted).toEqual(["successful-token"]);
-      return { url: "https://offline.invalid/snapshot", sizeBytes: 10 };
-    });
     const result = await runActivityPulse(dispatch);
     expect(result).toEqual({ stages: [
-      { stage: "transfers", exitCode: 1 }, { stage: "stats", exitCode: 0 },
-      { stage: "snapshot", exitCode: 0 },
+      { stage: "stats", exitCode: 0 }, { stage: "transfers", exitCode: 1 },
     ], exitCode: 1 });
     expect(jobs.stats).toHaveBeenCalledOnce();
-    expect(jobs.snapshot).toHaveBeenCalledOnce();
+    expect(jobs.snapshot).not.toHaveBeenCalled();
     expect(persisted).toEqual(["successful-token"]);
   });
-  it("all publishes partial data while retaining a failed source exit", async () => {
+  it("all retains a failed source exit without invoking legacy Blob publication", async () => {
     jobs.prices.mockResolvedValue({ processed: 2, stored: 1, errors: 1 });
     expect(await dispatch("all")).toBe(1);
     expect(jobs.metrics).toHaveBeenCalledOnce();
-    expect(jobs.snapshot).toHaveBeenCalledOnce();
+    expect(jobs.snapshot).not.toHaveBeenCalled();
     expect(jobs.actions).not.toHaveBeenCalled();
     expect(jobs.signals).not.toHaveBeenCalled();
   });
-  it("all attempts publication even after a thrown source failure", async () => {
+  it("all continues durable database stages after a thrown source failure", async () => {
     jobs.transfers.mockRejectedValue(new Error("offline source failure"));
     expect(await dispatch("all")).toBe(1);
     expect(jobs.metrics).toHaveBeenCalledOnce();
-    expect(jobs.snapshot).toHaveBeenCalledOnce();
+    expect(jobs.snapshot).not.toHaveBeenCalled();
   });
-  it("all propagates publication failure after healthy sources", async () => {
+  it("all ignores obsolete Blob credentials and does not publish", async () => {
     jobs.snapshot.mockRejectedValue(new Error("offline publication failure"));
-    expect(await dispatch("all")).toBe(1);
-    expect(jobs.snapshot).toHaveBeenCalledOnce();
+    expect(await dispatch("all")).toBe(0);
+    expect(jobs.snapshot).not.toHaveBeenCalled();
   });
   it("all skips publication without a Blob token", async () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
