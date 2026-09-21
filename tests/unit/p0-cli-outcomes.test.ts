@@ -124,9 +124,11 @@ describe("real sync CLI resolved source outcomes (offline I/O boundaries)", () =
   it.each([
     ["canonical", { processed: 2, created: 1, updated: 1, collisions: 1 }],
     ["transfers", { tokensSucceeded: 1, tokensFailed: 0, tokensSkipped: 0 }],
+    ["transfers", { tokensSucceeded: 194, tokensFailed: 0, tokensSkipped: 1 }],
     ["metadata", { processed: 1, enriched: 1, errors: 0 }],
     ["prices", { processed: 1, stored: 1, errors: 0 }],
-  ] as const)("accepts healthy %s result without treating collisions as errors", async (command, result) => {
+    ["stats", { ignored: true, gasStored: true, reason: "counter regression" }],
+  ] as const)("accepts healthy or warning-only %s result", async (command, result) => {
     jobs[command].mockResolvedValue(result);
     expect(await dispatch(command)).toBe(0);
   });
@@ -139,7 +141,7 @@ describe("real sync CLI resolved source outcomes (offline I/O boundaries)", () =
     ["transfers", { tokensSucceeded: 0, tokensFailed: 0, tokensSkipped: 2 }],
     ["metadata", { processed: 2, enriched: 1, errors: 1 }],
     ["prices", { processed: 2, stored: 1, errors: 1 }],
-    ["stats", { ignored: true, gasStored: true, reason: "counter regression" }],
+    ["stats", { ignored: true, gasStored: false, reason: "counter regression" }],
   ] as const)("returns failure for resolved %s degradation: %j", async (command, result) => {
     jobs[command].mockResolvedValue(result);
     expect(await dispatch(command)).toBe(1);

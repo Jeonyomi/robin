@@ -83,12 +83,18 @@ async function run(jobName: string): Promise<boolean> {
     if (result && typeof result === "object") {
       const outcome = result as Record<string, unknown>;
       const positive = (key: string) => typeof outcome[key] === "number" && outcome[key] > 0;
+      const warningOnly =
+        (["transfers", "transfers-blockscout"].includes(jobName) && positive("tokensSkipped") && !positive("tokensFailed") && positive("tokensSucceeded")) ||
+        (jobName === "stats" && outcome.ignored === true && outcome.gasStored === true);
       const degraded =
-        (["transfers", "transfers-blockscout"].includes(jobName) && (positive("tokensFailed") || positive("tokensSkipped") || outcome.tokensSucceeded === 0)) ||
+        (["transfers", "transfers-blockscout"].includes(jobName) && (positive("tokensFailed") || outcome.tokensSucceeded === 0)) ||
         (jobName === "metadata" && (positive("errors") || outcome.enriched === 0)) ||
         (jobName === "prices" && (positive("errors") || outcome.stored === 0)) ||
         (jobName === "canonical" && outcome.processed === 0) ||
-        (jobName === "stats" && outcome.ignored === true);
+        (jobName === "stats" && outcome.ignored === true && outcome.gasStored !== true);
+      if (warningOnly) {
+        console.warn(`⚠ ${jobName} completed with warning-only source results:`, JSON.stringify(result).slice(0, 500));
+      }
       if (degraded) {
         console.error(`✗ ${jobName} completed with degraded source results:`, JSON.stringify(result).slice(0, 500));
         process.exitCode = 1;
