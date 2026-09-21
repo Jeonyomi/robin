@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeAbiParameters, encodeEventTopics, parseAbi, toHex, type Address, type Hex } from "viem";
 import * as adapter from "@/lib/sources/uniswap-v3/leaders";
-import { isFreshLeaderboard, LpLeaderboardSchema, LpLeaderSchema, rankLpLeaders } from "@/lib/lp-leaders";
+import { isFreshLeaderboard, LP_LEADER_FRESH_MS, LpLeaderboardSchema, LpLeaderSchema, rankLpLeaders } from "@/lib/lp-leaders";
 import { GET } from "@/app/api/v1/lp-leaders/route";
 
 import * as storage from "@/lib/sources/uniswap-v3/snapshot-store";
@@ -165,14 +165,14 @@ describe("automatic LP discovery — synthetic injected read client", () => {
     const f = fixture(); f.state.chainId = 1;
     await expect(f.fetch()).rejects.toThrow(/network/); expect(f.client.readContract).not.toHaveBeenCalled();
   });
-  it.each([-301, 31])("rejects stale/future source timestamps (%s seconds)", async (seconds) => {
+  it.each([-(LP_LEADER_FRESH_MS / 1000) - 1, 31])("rejects stale/future source timestamps (%s seconds)", async (seconds) => {
     const f = fixture(); f.state.timestamp += BigInt(seconds);
     await expect(f.fetch()).rejects.toThrow(/stale/); expect(f.client.readContract).not.toHaveBeenCalled();
   });
   it("preserves block observation time and rejects a scan that ages out", async () => {
     const f = fixture(); f.state.timestamp -= BigInt(90);
     expect((await f.fetch()).observedAt).toBe(new Date(NOW - 90_000).toISOString());
-    const now = vi.fn().mockReturnValueOnce(NOW).mockReturnValue(NOW + 301_000);
+    const now = vi.fn().mockReturnValueOnce(NOW).mockReturnValue(NOW + LP_LEADER_FRESH_MS - 89_000);
     await expect(adapter.createLpLeaderboardFetcher(f.factory, now)()).rejects.toThrow(/aged out/);
   });
   it.each(["hash", "number"])("rejects end-of-scan reorg/identity drift: %s", async (field) => {
@@ -257,7 +257,7 @@ describe("bounded sampling, schema and deterministic ranks", () => {
     const before = [...rows]; expect(rankLpLeaders(rows).map((r) => r.tokenId)).toEqual(["99", "2", "10", "9007199254740993"]);
     expect(rows).toEqual(before);
   });
-  it.each([[-300_001, false], [-300_000, true], [0, true], [30_000, true], [30_001, false]])("checks inclusive freshness offset %s", (offset, fresh) => {
+  it.each([[-LP_LEADER_FRESH_MS - 1, false], [-LP_LEADER_FRESH_MS, true], [0, true], [30_000, true], [30_001, false]])("checks inclusive freshness offset %s", (offset, fresh) => {
     expect(isFreshLeaderboard({ observedAt: new Date(NOW + Number(offset)).toISOString() }, NOW)).toBe(fresh);
   });
   it("rejects invalid time, wrong-chain schemas, nonfinite values and malformed raw fees", async () => {
@@ -288,7 +288,7 @@ describe("LP leaders stored-snapshot API", () => {
   it("returns the validated stored observation with collector provenance, without RPC", async () => {
     const value = await record(); vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue(value);
     const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
-    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toContain("s-maxage=30");
+    expect(response.status).toBe(200); expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=240");
     const body = await response.json(); expect(body.data).toEqual(value.data);
     expect(body.meta).toMatchObject({ mode: "scheduled-verified-snapshot", storage: "neon-postgres", collectionIntervalSeconds: 120, collector: value.collector });
     expect(adapter.fetchLpLeaderboard).not.toHaveBeenCalled();
@@ -303,7 +303,7 @@ describe("LP leaders stored-snapshot API", () => {
     const value = await record(); const read = vi.spyOn(storage, "readStoredLpSnapshot").mockResolvedValue(value);
     expect((await GET(new Request("https://app.invalid/api/v1/lp-leaders"))).status).toBe(200);
     if (kind === "missing") read.mockResolvedValue(null);
-    else if (kind === "expired") read.mockResolvedValue({ ...value, data: { ...value.data, observedAt: new Date(NOW - 300_001).toISOString() } });
+    else if (kind === "expired") read.mockResolvedValue({ ...value, data: { ...value.data, observedAt: new Date(NOW - LP_LEADER_FRESH_MS - 1).toISOString() } });
     else read.mockRejectedValue(new Error("PRIVATE_DATABASE_URL"));
     const response = await GET(new Request("https://app.invalid/api/v1/lp-leaders"));
     expect(response.status).toBe(503); expect(response.headers.get("Retry-After")).toBe("15");
@@ -338,7 +338,7 @@ describe("LP durable snapshot store", () => {
   });
   it("rejects expired or structurally inconsistent publications before any database operation", async () => {
     const value = await row(); const query = vi.fn<storage.LpSnapshotQuery>(); const store = storage.createLpSnapshotStore(query, () => NOW);
-    await expect(store.publish({ ...value.snapshot, observedAt: new Date(NOW - 300_001).toISOString() }, revision, attemptAt)).rejects.toThrow(/Expired/);
+    await expect(store.publish({ ...value.snapshot, observedAt: new Date(NOW - LP_LEADER_FRESH_MS - 1).toISOString() }, revision, attemptAt)).rejects.toThrow(/Expired/);
     await expect(store.publish({ ...value.snapshot, sampled: 12 }, revision, attemptAt)).rejects.toThrow(/integrity/);
     expect(query).not.toHaveBeenCalled();
   });

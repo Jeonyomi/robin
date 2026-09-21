@@ -25,7 +25,11 @@ const pages = [
 function payload(marker: string, registry: boolean, lens: boolean) {
   const token = { address: `0x${marker}`, symbol: marker, name: marker, canonicalStatus: "CANONICAL", metrics: null, lastSeenAt: "2026-09-08T00:00:00Z", activityIndex: 50, evidence: [], momentumPct: null };
   return { data: registry || lens ? [token] : {
-    activity: { transferEvents: 12 }, coverage: { status: "success" }, dataQuality: { note: marker }, timeline: [], recentTransfers: [],
+    activity: { transferEvents: 12 }, coverage: { status: "success" }, dataQuality: { note: marker }, timeline: [], recentTransfers: [{
+      txHash: `0x${"ab".repeat(32)}`, logIndex: 0, tokenAddress: `0x${"cd".repeat(20)}`, symbol: marker,
+      kind: "transfer", fromAddress: `0x${"11".repeat(20)}`, toAddress: `0x${"22".repeat(20)}`,
+      normalizedValue: 1, blockNumber: 1, timestamp: "2026-09-08T00:00:00Z",
+    }],
   }, meta: { status: "active-limited", release: { coveragePct: 100, reasons: [] } } };
 }
 async function resolve(index: number, marker: string, page: typeof pages[number]) {

@@ -1,18 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const routes = [
-  "src/app/api/v1/lp-leaders/route.ts",
-  "src/app/api/v1/meme-leaders/route.ts",
-];
-
 describe("leader read-path caching", () => {
-  it.each(routes)("allows CDN reuse for %s", (route) => {
-    const routeSource = readFileSync(route, "utf8");
+  it("bounds LP CDN reuse by remaining source freshness without stale serving", () => {
+    const routeSource = readFileSync("src/app/api/v1/lp-leaders/route.ts", "utf8");
     expect(routeSource).toContain("s-maxage=");
-    expect(routeSource).toContain("stale-while-revalidate=");
+    expect(routeSource).toContain("remainingFreshSeconds");
+    expect(routeSource).not.toContain("stale-while-revalidate=");
+  });
+
+  it("allows bounded CDN reuse for Meme Leaders", () => {
+    const routeSource = readFileSync("src/app/api/v1/meme-leaders/route.ts", "utf8");
     expect(routeSource).toContain("s-maxage=240");
-    expect(routeSource).not.toContain('const headers = { "Cache-Control": "no-store, max-age=0" }');
+    expect(routeSource).toContain("stale-while-revalidate=");
   });
 
   it("does not bypass browser caching for the remaining Meme Leaders client", () => {
